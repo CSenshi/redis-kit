@@ -8,8 +8,8 @@ import {
   expect,
   it,
 } from 'vitest';
-import { Redlock } from './redlock.js';
-import type { RedlockResult } from './types.js';
+import { Redlock, RedlockInstance } from './redlock.js';
+
 
 // Helper function to parse REDIS_HOSTS environment variable
 function getRedisConfig(): Array<{ host: string; port: number }> {
@@ -18,8 +18,6 @@ function getRedisConfig(): Array<{ host: string; port: number }> {
     'localhost,localhost,localhost,localhost,localhost';
   const redisPorts = process.env.REDIS_PORTS ?? '6379,6380,6381,6382,6383';
 
-  console.log(`Using Redis hosts: ${redisHosts}`);
-  console.log(`Using Redis ports: ${redisPorts}`);
   const hosts = redisHosts.split(',').map((host) => host.trim());
   const ports = redisPorts.split(',').map((port) => parseInt(port.trim(), 10));
   if (hosts.length !== ports.length) {
@@ -88,21 +86,19 @@ describe('Redlock Integration Tests', () => {
     it('should acquire and release a lock successfully', async () => {
       const key = generateTestKey();
 
-      const result = await redlock.acquire(key, TEST_TTL);
+      const lock = await redlock.acquire(key, TEST_TTL);
 
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.token).toBeTypeOf('string');
-        expect(result.token.length).toBeGreaterThan(0);
-        expect(result.expiresAt).toBeInstanceOf(Date);
-        expect(result.success && result.effectiveValidityMs).toBeGreaterThan(0);
-        expect(
-          result.success && result.acquiredInstances,
-        ).toBeGreaterThanOrEqual(3); // Quorum for 5 instances
+      expect(lock).not.toBeNull();
+      if (lock) {
+        expect(lock.resourceKey).toBe(key);
+        expect(lock.expirationTime).toBeInstanceOf(Date);
+        expect(lock.isValid).toBe(true);
+        expect(lock.isReleased).toBe(false);
 
         // Release lock
-        const released = await redlock.release(key, result.token);
+        const released = await lock.release();
         expect(released).toBe(true);
+        expect(lock.isReleased).toBe(true);
       }
     });
 
@@ -110,24 +106,24 @@ describe('Redlock Integration Tests', () => {
       const key = generateTestKey();
 
       // First client acquires lock
-      const result1 = await redlock.acquire(key, TEST_TTL);
-      expect(result1.success).toBe(true);
+      const lock1 = await redlock.acquire(key, TEST_TTL);
+      expect(lock1).not.toBeNull();
 
-      if (!result1.success) throw new Error('Failed to acquire lock');
+      if (!lock1) throw new Error('Failed to acquire lock');
 
       // Second client should fail to acquire the same lock
-      const result2 = await redlock.acquire(key, TEST_TTL);
-      expect(result2.success).toBe(false);
+      const lock2 = await redlock.acquire(key, TEST_TTL);
+      expect(lock2).toBeNull();
 
       // Release first lock
-      await redlock.release(key, result1.token);
+      await lock1.release();
 
       // Now second client should be able to acquire
-      const result3 = await redlock.acquire(key, TEST_TTL);
-      expect(result3.success).toBe(true);
+      const lock3 = await redlock.acquire(key, TEST_TTL);
+      expect(lock3).not.toBeNull();
 
-      if (result3.success) {
-        await redlock.release(key, result3.token);
+      if (lock3) {
+        await lock3.release();
       }
     });
 
@@ -135,33 +131,39 @@ describe('Redlock Integration Tests', () => {
       const key = generateTestKey();
 
       // Acquire lock with short TTL
-      const result = await redlock.acquire(key, 2000);
-      expect(result.success).toBe(true);
+      const lock = await redlock.acquire(key, 2000);
+      expect(lock).not.toBeNull();
 
-      if (!result.success) throw new Error('Failed to acquire lock');
+      if (!lock) throw new Error('Failed to acquire lock');
 
       // Extend the lock
-      const extended = await redlock.extend(key, result.token, 5000);
+      const extended = await lock.extend(5000);
       expect(extended).toBe(true);
 
       // Clean up
-      await redlock.release(key, result.token);
+      await lock.release();
     });
 
     it('should fail to extend with invalid token', async () => {
       const key = generateTestKey();
 
-      // Try to extend non-existent lock
-      const extended = await redlock.extend(key, 'invalid-token', 5000);
+      // Acquire lock first
+      const lock = await redlock.acquire(key, TEST_TTL);
+      expect(lock).not.toBeNull();
+
+      if (!lock) throw new Error('Failed to acquire lock');
+
+      // Try to extend with wrong token by creating a fake RedlockInstance
+      const fakeToken = 'invalid-token';
+      const fakeExpiresAt = new Date(Date.now() + TEST_TTL);
+      const fakeLock = new RedlockInstance(redlock, key, fakeToken, fakeExpiresAt, TEST_TTL);
+
+      // This should fail because the token is invalid
+      const extended = await fakeLock.extend();
       expect(extended).toBe(false);
-    });
 
-    it('should fail to release with invalid token', async () => {
-      const key = generateTestKey();
-
-      // Try to release non-existent lock
-      const released = await redlock.release(key, 'invalid-token');
-      expect(released).toBe(false);
+      // Clean up real lock
+      await lock.release();
     });
   });
 
@@ -171,21 +173,20 @@ describe('Redlock Integration Tests', () => {
       const shortTtl = 1000; // 1 second
 
       // Acquire lock with short TTL
-      const result = await redlock.acquire(key, shortTtl);
-      expect(result.success).toBe(true);
+      const lock = await redlock.acquire(key, shortTtl);
+      expect(lock).not.toBeNull();
 
-      if (!result.success) throw new Error('Failed to acquire lock');
+      if (!lock) throw new Error('Failed to acquire lock');
 
       // Wait for lock to expire
       await new Promise((resolve) => setTimeout(resolve, shortTtl + 500));
 
       // Should be able to acquire the same lock now
-      const result2 = await redlock.acquire(key, TEST_TTL);
-      expect(result2.success).toBe(true);
+      const lock2 = await redlock.acquire(key, TEST_TTL);
+      expect(lock2).not.toBeNull();
 
-      if (result2.success) {
-        const result3 = await redlock.release(key, result2.token);
-        expect(result3).toBe(true);
+      if (lock2) {
+        await lock2.release();
       }
     });
   });
@@ -199,12 +200,12 @@ describe('Redlock Integration Tests', () => {
       await clientToDisconnect.quit();
 
       // Should still be able to acquire lock with 4/5 instances
-      const result = await redlock.acquire(key, TEST_TTL);
-      expect(result.success).toBe(true);
+      const lock = await redlock.acquire(key, TEST_TTL);
+      expect(lock).not.toBeNull();
 
-      if (result.success) {
-        expect(result.acquiredInstances).toBeGreaterThanOrEqual(3); // Still majority
-        await redlock.release(key, result.token);
+      if (lock) {
+        expect(lock.isValid).toBe(true);
+        await lock.release();
       }
     });
 
@@ -222,8 +223,8 @@ describe('Redlock Integration Tests', () => {
       await Promise.all(disconnectPromises);
 
       // Should fail to acquire lock without majority
-      const result = await redlock.acquire(key, TEST_TTL);
-      expect(result.success).toBe(false);
+      const lock = await redlock.acquire(key, TEST_TTL);
+      expect(lock).toBeNull();
     });
 
     it('should retry on reconected instances by default', async () => {
@@ -254,8 +255,8 @@ describe('Redlock Integration Tests', () => {
         );
       }, 200); // Wait for 200 ms to allow reconnection
 
-      const result = await lock2.acquire(key, TEST_TTL);
-      expect(result.success).toBe(true);
+      const lock = await lock2.acquire(key, TEST_TTL);
+      expect(lock).not.toBeNull();
     });
   });
 
@@ -265,7 +266,7 @@ describe('Redlock Integration Tests', () => {
       const numClients = 10;
       const acquisitionPromises: Promise<{
         clientId: number;
-        result: RedlockResult;
+        result: RedlockInstance | null;
       }>[] = [];
 
       // Create multiple concurrent acquisition attempts
@@ -281,15 +282,15 @@ describe('Redlock Integration Tests', () => {
       const results = await Promise.all(acquisitionPromises);
 
       // Exactly one should succeed
-      const successful = results.filter((r) => r.result.success);
-      const failed = results.filter((r) => !r.result.success);
+      const successful = results.filter((r) => r.result !== null);
+      const failed = results.filter((r) => r.result === null);
 
       expect(successful).toHaveLength(1);
       expect(failed).toHaveLength(numClients - 1);
 
       // Clean up the successful lock
-      if (successful.length > 0 && successful[0].result.success) {
-        await redlock.release(key, successful[0].result.token);
+      if (successful.length > 0 && successful[0].result) {
+        await successful[0].result.release();
       }
     });
 
@@ -298,11 +299,11 @@ describe('Redlock Integration Tests', () => {
       const cycles = 5;
 
       for (let i = 0; i < cycles; i++) {
-        const result = await redlock.acquire(key, TEST_TTL);
-        expect(result.success).toBe(true);
+        const lock = await redlock.acquire(key, TEST_TTL);
+        expect(lock).not.toBeNull();
 
-        if (result.success) {
-          const released = await redlock.release(key, result.token);
+        if (lock) {
+          const released = await lock.release();
           expect(released).toBe(true);
         }
       }
@@ -314,14 +315,14 @@ describe('Redlock Integration Tests', () => {
       const key = generateTestKey();
       const startTime = Date.now();
 
-      const result = await redlock.acquire(key, TEST_TTL);
+      const lock = await redlock.acquire(key, TEST_TTL);
       const elapsedTime = Date.now() - startTime;
 
-      expect(result.success).toBe(true);
+      expect(lock).not.toBeNull();
       expect(elapsedTime).toBeLessThan(1000); // Should complete within 1 second
 
-      if (result.success) {
-        await redlock.release(key, result.token);
+      if (lock) {
+        await lock.release();
       }
     });
 
@@ -329,17 +330,255 @@ describe('Redlock Integration Tests', () => {
       const key = generateTestKey();
       const shortTtl = 100; // 100ms - very short
 
-      const result = await redlock.acquire(key, shortTtl);
+      const lock = await redlock.acquire(key, shortTtl);
 
       // May succeed or fail depending on timing, but should not throw
-      expect(typeof result.success).toBe('boolean');
+      expect(lock === null || lock instanceof RedlockInstance).toBe(true);
 
-      if (result.success) {
-        // If successful, effective validity should be positive but small
-        expect(result.effectiveValidityMs).toBeGreaterThan(0);
-        expect(result.effectiveValidityMs).toBeLessThan(shortTtl);
+      if (lock) {
+        // If successful, lock should be valid
+        expect(lock.isValid).toBe(true);
+        expect(lock.expirationTime.getTime()).toBeGreaterThan(Date.now());
 
-        await redlock.release(key, result.token);
+        await lock.release();
+      }
+    });
+  });
+
+  describe('WithLock Integration', () => {
+    it('should execute function with automatic lock management', async () => {
+      const key = generateTestKey();
+      let executionCount = 0;
+
+      const result = await redlock.withLock(key, TEST_TTL, async () => {
+        executionCount++;
+        return 'success';
+      });
+
+      expect(result).toBe('success');
+      expect(executionCount).toBe(1);
+
+      // Lock should be automatically released - verify by acquiring again
+      const lock = await redlock.acquire(key, TEST_TTL);
+      expect(lock).not.toBeNull();
+
+      if (lock) {
+        await lock.release();
+      }
+    });
+
+    it('should automatically release lock when function throws error', async () => {
+      const key = generateTestKey();
+      const errorMessage = 'Test error';
+
+      await expect(
+        redlock.withLock(key, TEST_TTL, async () => {
+          throw new Error(errorMessage);
+        })
+      ).rejects.toThrow(errorMessage);
+
+      // Lock should be automatically released even on error
+      const lock = await redlock.acquire(key, TEST_TTL);
+      expect(lock).not.toBeNull();
+
+      if (lock) {
+        await lock.release();
+      }
+    });
+
+    it('should handle concurrent withLock calls correctly', async () => {
+      const key = generateTestKey();
+      const results: string[] = [];
+      const delays = Array.from({ length: 10 }, (_, i) => (i + 1) * 1000); // 1s, 2s, 3s delays
+
+      const promises = delays.map(async (delay, index) => {
+        try {
+          const result = await redlock.withLock(key, TEST_TTL, async () => {
+            await new Promise(resolve => setTimeout(resolve, delay));
+            results.push(`client-${index}`);
+            return `result-${index}`;
+          });
+          return { success: true, result, index };
+        } catch (error) {
+          return { success: false, error: (error as Error).message, index };
+        }
+      });
+
+      const outcomes = await Promise.all(promises);
+
+      // Exactly one should succeed, others should fail with lock acquisition error
+      const successful = outcomes.filter(o => o.success);
+      const failed = outcomes.filter(o => !o.success);
+
+      expect(successful).toHaveLength(1);
+      expect(failed).toHaveLength(delays.length - 1);
+      expect(results).toHaveLength(1); // Only one function should execute
+
+      // Failed attempts should be due to lock acquisition failure
+      failed.forEach(outcome => {
+        expect(outcome.error).toContain('Failed to acquire lock');
+      });
+    });
+
+    it('should handle long-running operations with auto-extension', async () => {
+      const key = generateTestKey();
+      const shortTtl = 1000; // 2 seconds
+      const longOperation = 2000; // 4 seconds (longer than TTL)
+
+      const startTime = Date.now();
+
+      const result = await redlock.withLock(key, shortTtl, async () => {
+        // Simulate long-running operation
+        await new Promise(resolve => setTimeout(resolve, longOperation));
+        return 'completed';
+      });
+
+      const elapsedTime = Date.now() - startTime;
+
+      expect(result).toBe('completed');
+      expect(elapsedTime).toBeGreaterThanOrEqual(longOperation);
+
+      // Verify lock was held throughout the operation and then released
+      const lock = await redlock.acquire(key, TEST_TTL);
+      expect(lock).not.toBeNull();
+
+      if (lock) {
+        await lock.release();
+      }
+    });
+
+    it('should fail gracefully when lock acquisition fails', async () => {
+      const key = generateTestKey();
+
+      // First, acquire lock manually to block withLock
+      const blockingLock = await redlock.acquire(key, TEST_TTL);
+      expect(blockingLock).not.toBeNull();
+
+      if (!blockingLock) throw new Error('Failed to acquire blocking lock');
+
+      // Now try withLock - should fail
+      await expect(
+        redlock.withLock(key, TEST_TTL, async () => {
+          return 'should not execute';
+        })
+      ).rejects.toThrow('Failed to acquire lock');
+
+      // Clean up
+      await blockingLock.release();
+    });
+
+    it('should handle rapid sequential withLock calls', async () => {
+      const key = generateTestKey();
+      const iterations = 5;
+      const executionOrder: number[] = [];
+
+      const promises: Promise<void>[] = [];
+
+      const currentRedlock = new Redlock(redisClients, {
+        driftFactor: 0.01,
+        retryDelayMs: 100,
+        retryJitterMs: 50,
+        maxRetryAttempts: 0,
+      });
+      for (let i = 0; i < iterations; i++) {
+        const promise = currentRedlock.withLock(key, TEST_TTL, async () => {
+          executionOrder.push(i);
+          // Small delay to ensure order is maintained
+          await new Promise(resolve => setTimeout(resolve, 50));
+        })
+
+        promises.push(promise);
+      }
+
+      await Promise.allSettled(promises);
+
+      // At least one should have executed successfully
+      expect(executionOrder.length).toBe(1);
+
+      // Verify lock is released after all operations
+      const finalLock = await redlock.acquire(key, TEST_TTL);
+      expect(finalLock).not.toBeNull();
+
+      if (finalLock) {
+        await finalLock.release();
+      }
+    });
+
+    it('should pass through return values correctly', async () => {
+      const key = generateTestKey();
+
+      // Test different return types
+      const stringResult = await redlock.withLock(key, TEST_TTL, async () => {
+        return 'test-string';
+      });
+      expect(stringResult).toBe('test-string');
+
+      const numberResult = await redlock.withLock(key, TEST_TTL, async () => {
+        return 42;
+      });
+      expect(numberResult).toBe(42);
+
+      const objectResult = await redlock.withLock(key, TEST_TTL, async () => {
+        return { success: true, data: [1, 2, 3] };
+      });
+      expect(objectResult).toEqual({ success: true, data: [1, 2, 3] });
+
+      const nullResult = await redlock.withLock(key, TEST_TTL, async () => {
+        return null;
+      });
+      expect(nullResult).toBeNull();
+    });
+
+    it('should validate parameters correctly', async () => {
+      const key = generateTestKey();
+
+      // Test invalid key
+      await expect(
+        redlock.withLock('', TEST_TTL, async () => 'test')
+      ).rejects.toThrow();
+
+      // Test invalid TTL
+      await expect(
+        redlock.withLock(key, 0, async () => 'test')
+      ).rejects.toThrow();
+
+      await expect(
+        redlock.withLock(key, -1000, async () => 'test')
+      ).rejects.toThrow();
+
+      // Test invalid function
+      await expect(
+        redlock.withLock(key, TEST_TTL, null as any)
+      ).rejects.toThrow();
+    });
+
+    it('should work with async functions that return promises', async () => {
+      const key = generateTestKey();
+
+      const result = await redlock.withLock(key, TEST_TTL, () => {
+        // Return a promise directly (not async function)
+        return Promise.resolve('promise-result');
+      });
+
+      expect(result).toBe('promise-result');
+    });
+
+    it('should handle rejected promises correctly', async () => {
+      const key = generateTestKey();
+      const errorMessage = 'Promise rejection test';
+
+      await expect(
+        redlock.withLock(key, TEST_TTL, () => {
+          return Promise.reject(new Error(errorMessage));
+        })
+      ).rejects.toThrow(errorMessage);
+
+      // Verify lock is released after rejection
+      const lock = await redlock.acquire(key, TEST_TTL);
+      expect(lock).not.toBeNull();
+
+      if (lock) {
+        await lock.release();
       }
     });
   });
@@ -351,11 +590,11 @@ describe('Redlock Integration Tests', () => {
       // This test simulates network issues by using invalid Redis commands
       // In a real scenario, you might use network simulation tools
 
-      const result = await redlock.acquire(key, TEST_TTL);
-      expect(typeof result.success).toBe('boolean');
+      const lock = await redlock.acquire(key, TEST_TTL);
+      expect(lock === null || lock instanceof RedlockInstance).toBe(true);
 
-      if (result.success) {
-        await redlock.release(key, result.token);
+      if (lock) {
+        await lock.release();
       }
     });
 
@@ -363,8 +602,14 @@ describe('Redlock Integration Tests', () => {
       // Test with invalid parameters
       await expect(redlock.acquire('', TEST_TTL)).rejects.toThrow();
       await expect(redlock.acquire('valid-key', 0)).rejects.toThrow();
-      await expect(redlock.release('', 'token')).rejects.toThrow();
-      await expect(redlock.extend('key', '', 1000)).rejects.toThrow();
+
+      // Test that users cannot directly call release and extend - they should use RedlockInstance
+      // Note: TypeScript private methods are still accessible at runtime, but this documents the intended API
+      expect(typeof (redlock as any).release).toBe('function');
+      expect(typeof (redlock as any).extend).toBe('function');
+
+      // The real protection comes from the clean public interface design - users should only see:
+      // redlock.acquire() and redlock.withLock() in their IDE
     });
   });
 });

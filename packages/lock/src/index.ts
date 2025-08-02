@@ -7,28 +7,37 @@
  * - **RedisLock**: Simple, fast locking for single Redis instance deployments
  * - **Redlock**: Distributed locking across multiple Redis instances with stronger safety guarantees
  *
- * @example Single-instance locking
+ * @example Distributed locking with manual acquire/release
  * ```typescript
  * import { createClient } from 'redis';
- * import { RedisLock } from '@redis-kit/lock';
+ * import { Redlock } from '@redis-kit/lock';
  *
- * const redis = createClient();
- * await redis.connect();
+ * // Set up multiple Redis instances (or single instance)
+ * const clients = [
+ *   createClient({ host: 'redis1.example.com' }),
+ *   createClient({ host: 'redis2.example.com' }),
+ *   createClient({ host: 'redis3.example.com' })
+ * ];
  *
- * const lock = new RedisLock(redis);
- * const result = await lock.acquire('my-resource', 30000);
+ * await Promise.all(clients.map(client => client.connect()));
  *
- * if (result.success) {
+ * const redlock = new Redlock(clients);
+ * const lock = await redlock.acquire('my-resource', 30000);
+ *
+ * if (lock) {
  *   try {
  *     // Critical section
  *     console.log('Working with exclusive access');
+ *
+ *     // Optional: start auto-extension
+ *     lock.startAutoExtension(5000); // extend 5 seconds before expiry
  *   } finally {
- *     await lock.release('my-resource', result.token);
+ *     await lock.release();
  *   }
  * }
  * ```
  *
- * @example Distributed locking (Redlock)
+ * @example Distributed locking with withLock (Redlock)
  * ```typescript
  * import { createClient } from 'redis';
  * import { Redlock } from '@redis-kit/lock';
@@ -45,31 +54,24 @@
  * await Promise.all(clients.map(client => client.connect()));
  *
  * const redlock = new Redlock(clients);
- * const result = await redlock.acquire('my-resource', 30000);
+ * const result = await redlock.withLock('my-resource', 30000, async () => {
+ *   console.log('Distributed lock acquired with automatic management');
  *
- * if (result.success) {
- *   try {
- *     console.log(`Distributed lock acquired on ${result.acquiredInstances} instances`);
- *     // Critical section with stronger safety guarantees
- *   } finally {
- *     await redlock.release('my-resource', result.token);
+ *   // Long-running operation - lock is automatically managed
+ *   for (let i = 0; i < 100; i++) {
+ *     await processItem(i);
  *   }
- * }
+ *
+ *   return 'processing completed';
+ * }, { extensionThresholdMs: 5000 }); // Auto-extend 5 seconds before expiry
  * ```
  *
  * @packageDocumentation
  */
 
 // Distributed lock implementation (Redlock algorithm)
-export { Redlock } from './redlock.js';
-export type { RedlockOptions, RedlockResult } from './types.js';
+export { Redlock, type RedlockInstance } from './redlock.js';
+export type { RedlockOptions } from './types.js';
 
 // Common error classes
 export { RedisConnectionError, InvalidParameterError } from './errors.js';
-
-// Utility functions (for advanced usage)
-export {
-  ACQUIRE_SCRIPT,
-  RELEASE_SCRIPT,
-  EXTEND_SCRIPT,
-} from './lua-scripts.js';

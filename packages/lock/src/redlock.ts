@@ -6,7 +6,247 @@ import {
   RELEASE_SCRIPT,
 } from './lua-scripts.js';
 import { generateToken } from './token.js';
-import type { RedlockOptions, RedlockResult } from './types.js';
+import type { RedlockOptions } from './types.js';
+
+// Symbol for internal access control - only RedlockInstance can use this
+/**
+ * Internal interface for RedlockInstance to access private methods
+ */
+interface RedlockInternalAccess {
+  release(key: string, token: string): Promise<boolean>;
+  extend(key: string, token: string, ttlMs: number): Promise<boolean>;
+}
+
+const INTERNAL_ACCESS = Symbol.for('redlock-internal-access');
+
+/**
+ * Represents an individual distributed lock instance with self-managing lifecycle.
+ *
+ * This class encapsulates the state and behavior of a single distributed lock,
+ * providing methods for release, extension, and auto-extension management.
+ */
+export class RedlockInstance {
+  private _isReleased = false;
+  private extensionTimer?: NodeJS.Timeout;
+  private autoExtensionEnabled = false;
+  private autoExtensionThresholdMs = 1000;
+
+  constructor(
+    private readonly redlock: Redlock,
+    private readonly key: string,
+    private readonly token: string,
+    private expiresAt: Date,
+    private readonly ttlMs: number,
+  ) {
+    this.validateConstructorParams();
+  }
+
+  /**
+   * Whether this lock has been explicitly released.
+   */
+  get isReleased(): boolean {
+    return this._isReleased;
+  }
+
+  /**
+   * Whether this lock has expired based on its TTL.
+   */
+  get isExpired(): boolean {
+    return Date.now() > this.expiresAt.getTime();
+  }
+
+  /**
+   * Whether this lock is currently valid (not released and not expired).
+   */
+  get isValid(): boolean {
+    return !this.isReleased && !this.isExpired;
+  }
+
+  /**
+   * When this lock expires.
+   */
+  get expirationTime(): Date {
+    return new Date(this.expiresAt.getTime());
+  }
+
+  /**
+   * The resource key this lock protects.
+   */
+  get resourceKey(): string {
+    return this.key;
+  }
+
+  /**
+   * Releases this lock from all Redis instances.
+   * This operation is idempotent - calling it multiple times is safe.
+   *
+   * @returns Promise resolving to true if the lock was released, false if it was already released
+   */
+  async release(): Promise<boolean> {
+    if (this._isReleased) {
+      return true; // Already released, idempotent operation
+    }
+
+    this._isReleased = true;
+    this.stopAutoExtension();
+
+    try {
+      return await this.redlock[INTERNAL_ACCESS].release(this.key, this.token);
+    } catch (error) {
+      // Log error but don't throw - release should be best-effort
+      console.warn(`Failed to release lock ${this.key}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Extends the TTL of this lock.
+   * Requires majority consensus from Redis instances to succeed.
+   *
+   * @param newTtlMs Optional new TTL in milliseconds. If not provided, uses the original TTL.
+   * @returns Promise resolving to true if extension succeeded, false otherwise
+   */
+  async extend(newTtlMs?: number): Promise<boolean> {
+    if (this._isReleased) {
+      throw new Error('Cannot extend a released lock');
+    }
+
+    const ttlToUse = newTtlMs ?? this.ttlMs;
+
+    if (!Number.isInteger(ttlToUse) || ttlToUse <= 0) {
+      throw new InvalidParameterError('newTtlMs', ttlToUse, 'positive integer');
+    }
+
+    try {
+      const success = await this.redlock[INTERNAL_ACCESS].extend(
+        this.key,
+        this.token,
+        ttlToUse,
+      );
+
+      if (success) {
+        this.expiresAt = new Date(Date.now() + ttlToUse);
+      }
+
+      return success;
+    } catch (error) {
+      // Extension failures should be propagated as they indicate lock issues
+      throw new Error(
+        `Failed to extend lock ${this.key}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  /**
+   * Starts automatic extension of this lock.
+   * The lock will be extended automatically when it approaches expiration.
+   *
+   * @param thresholdMs Time in milliseconds before expiration to trigger extension (default: 1000)
+   */
+  startAutoExtension(thresholdMs = 1000): void {
+    if (this._isReleased) {
+      throw new Error('Cannot start auto-extension on a released lock');
+    }
+
+    if (thresholdMs <= 0 || !Number.isInteger(thresholdMs)) {
+      throw new InvalidParameterError(
+        'thresholdMs',
+        thresholdMs,
+        'positive integer',
+      );
+    }
+
+    this.autoExtensionThresholdMs = thresholdMs;
+    this.autoExtensionEnabled = true;
+    this.scheduleExtension();
+  }
+
+  /**
+   * Stops auto-extension if it's currently running.
+   * This is called automatically when the lock is released.
+   */
+  stopAutoExtension(): void {
+    if (this.extensionTimer) {
+      clearTimeout(this.extensionTimer);
+      this.extensionTimer = undefined;
+    }
+    this.autoExtensionEnabled = false;
+  }
+
+  /**
+   * Schedules the next auto-extension attempt.
+   */
+  private scheduleExtension(): void {
+    if (!this.autoExtensionEnabled || this._isReleased) return;
+
+    const timeUntilExtension =
+      this.expiresAt.getTime() - Date.now() - this.autoExtensionThresholdMs;
+
+    if (timeUntilExtension <= 0) {
+      void this.performExtension();
+      return;
+    }
+
+    this.extensionTimer = setTimeout(() => {
+      void this.performExtension();
+    }, timeUntilExtension);
+  }
+
+  /**
+   * Performs the actual extension operation in the background.
+   */
+  private async performExtension(): Promise<void> {
+    if (!this.autoExtensionEnabled || this._isReleased) return;
+
+    this.extensionTimer = undefined;
+
+    try {
+      const success = await this.extend(this.ttlMs);
+
+      if (success) {
+        // Extension succeeded, schedule the next one
+        this.scheduleExtension();
+      } else {
+        // Extension failed - stop auto-extension
+        this.autoExtensionEnabled = false;
+        console.warn(
+          `Auto-extension failed for lock ${this.key} - stopping auto-extension`,
+        );
+      }
+    } catch (error) {
+      // Extension error - stop auto-extension
+      this.autoExtensionEnabled = false;
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.warn(
+        `Auto-extension error for lock ${this.key}: ${errorMessage} - stopping auto-extension`,
+      );
+    }
+  }
+
+  private validateConstructorParams(): void {
+    if (!this.key || typeof this.key !== 'string') {
+      throw new InvalidParameterError('key', this.key, 'non-empty string');
+    }
+    if (!this.token || typeof this.token !== 'string') {
+      throw new InvalidParameterError('token', this.token, 'non-empty string');
+    }
+    if (
+      !this.expiresAt ||
+      !(this.expiresAt instanceof Date) ||
+      isNaN(this.expiresAt.getTime())
+    ) {
+      throw new InvalidParameterError(
+        'expiresAt',
+        this.expiresAt,
+        'valid Date object',
+      );
+    }
+    if (!Number.isInteger(this.ttlMs) || this.ttlMs <= 0) {
+      throw new InvalidParameterError('ttlMs', this.ttlMs, 'positive integer');
+    }
+  }
+}
 
 /**
  * Redlock distributed lock implementation following the official Redis Redlock algorithm.
@@ -32,6 +272,11 @@ import type { RedlockOptions, RedlockResult } from './types.js';
  * ```
  */
 export class Redlock {
+  /**
+   * Internal access point for RedlockInstance. Not part of public API.
+   * @internal
+   */
+  [INTERNAL_ACCESS]: RedlockInternalAccess;
   private readonly clients: RedisClientType[];
   private readonly quorum: number;
   private readonly driftFactor: number;
@@ -61,6 +306,12 @@ export class Redlock {
     this.retryDelayMs = options.retryDelayMs ?? 200;
     this.retryJitterMs = options.retryJitterMs ?? 100;
     this.maxRetryAttempts = options.maxRetryAttempts ?? 3;
+
+    // Set up internal access for RedlockInstance
+    this[INTERNAL_ACCESS] = {
+      release: this.release.bind(this),
+      extend: this.extend.bind(this),
+    };
   }
 
   /**
@@ -71,10 +322,10 @@ export class Redlock {
    *
    * @param key Resource name to lock
    * @param ttlMs Lock time-to-live in milliseconds
-   * @returns RedlockResult indicating success/failure
+   * @returns RedlockInstance if acquisition succeeds, null otherwise
    * @see http://redis.io/topics/distlock/
    */
-  async acquire(key: string, ttlMs: number): Promise<RedlockResult> {
+  async acquire(key: string, ttlMs: number): Promise<RedlockInstance | null> {
     this.validateKey(key);
     this.validateTtl(ttlMs);
 
@@ -102,13 +353,8 @@ export class Redlock {
       });
 
       if (evaluation.success) {
-        return {
-          success: true,
-          token,
-          expiresAt: new Date(Date.now() + evaluation.effectiveValidityMs),
-          effectiveValidityMs: evaluation.effectiveValidityMs,
-          acquiredInstances: successCount,
-        };
+        const expiresAt = new Date(Date.now() + evaluation.effectiveValidityMs);
+        return new RedlockInstance(this, key, token, expiresAt, ttlMs);
       }
 
       // Failed - cleanup partial acquisitions
@@ -125,14 +371,62 @@ export class Redlock {
       }
     }
 
-    return { success: false };
+    return null;
   }
 
   /**
-   * Releases a distributed lock from all instances.
-   * Safe to call regardless of acquisition status.
+   * Executes a function within a lock context with automatic lifecycle management.
+   *
+   * Provides automatic lock acquisition, extension, and release. The lock is extended
+   * automatically when approaching expiration to ensure the function can complete.
+   *
+   * @param key Resource name to lock
+   * @param ttlMs Lock time-to-live in milliseconds
+   * @param fn Function to execute within the lock context
+   * @param options Optional configuration for auto-extension behavior
+   * @returns Promise resolving to the function's return value
+   *
+   * @example
+   * ```typescript
+   * const result = await redlock.withLock('my-resource', 30000, async () => {
+   *   return performWork();
+   * });
+   * ```
    */
-  async release(key: string, token: string): Promise<boolean> {
+  async withLock<T>(
+    key: string,
+    ttlMs: number,
+    fn: () => Promise<T>,
+    options: { extensionThresholdMs?: number } = {},
+  ): Promise<T> {
+    if (typeof fn !== 'function') {
+      throw new InvalidParameterError('fn', fn, 'function');
+    }
+
+    // Acquire lock
+    const lock = await this.acquire(key, ttlMs);
+    if (!lock) {
+      throw new Error(`Failed to acquire lock for resource: ${key}`);
+    }
+
+    // Start auto-extension if threshold is provided
+    if (options.extensionThresholdMs !== undefined) {
+      lock.startAutoExtension(options.extensionThresholdMs);
+    }
+
+    try {
+      return await fn();
+    } finally {
+      // Always stop auto-extension and release lock
+      lock.stopAutoExtension();
+      await lock.release();
+    }
+  }
+
+  /**
+   * Internal method for releasing locks. Only accessible by RedlockInstance.
+   */
+  private async release(key: string, token: string): Promise<boolean> {
     this.validateKey(key);
     this.validateToken(token);
 
@@ -148,10 +442,13 @@ export class Redlock {
   }
 
   /**
-   * Extends the TTL of an existing lock.
-   * Requires majority consensus for success.
+   * Internal method for extending locks. Only accessible by RedlockInstance.
    */
-  async extend(key: string, token: string, ttlMs: number): Promise<boolean> {
+  private async extend(
+    key: string,
+    token: string,
+    ttlMs: number,
+  ): Promise<boolean> {
     this.validateKey(key);
     this.validateToken(token);
     this.validateTtl(ttlMs);
