@@ -58,7 +58,7 @@ jobs:
 
       # Prepend any command with "nx-cloud record --" to record its logs to Nx Cloud
       # - run: pnpm exec nx-cloud record -- echo Hello World
-      - run: pnpm exec nx run-many -t lint test build
+      - run: pnpm exec nx run-many -t lint test build typecheck
         env:
           REDIS_HOSTS: localhost,localhost,localhost,localhost,localhost
           REDIS_PORTS: 6379,6380,6381,6382,6383
