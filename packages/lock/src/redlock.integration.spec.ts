@@ -1,19 +1,31 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
-import { createClient, type RedisClientType } from 'redis';
+import { type RedisClientType, createClient } from 'redis';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from 'vitest';
 import { Redlock } from './redlock.js';
 import type { RedlockResult } from './types.js';
 
 // Helper function to parse REDIS_HOSTS environment variable
 function getRedisConfig(): Array<{ host: string; port: number }> {
-  const redisHosts = process.env.REDIS_HOSTS ?? 'localhost,localhost,localhost,localhost,localhost';
+  const redisHosts =
+    process.env.REDIS_HOSTS ??
+    'localhost,localhost,localhost,localhost,localhost';
   const redisPorts = process.env.REDIS_PORTS ?? '6379,6380,6381,6382,6383';
 
   console.log(`Using Redis hosts: ${redisHosts}`);
   console.log(`Using Redis ports: ${redisPorts}`);
-  const hosts = redisHosts.split(',').map(host => host.trim());
-  const ports = redisPorts.split(',').map(port => parseInt(port.trim(), 10));
+  const hosts = redisHosts.split(',').map((host) => host.trim());
+  const ports = redisPorts.split(',').map((port) => parseInt(port.trim(), 10));
   if (hosts.length !== ports.length) {
-    throw new Error('REDIS_HOSTS and REDIS_PORTS must have the same number of entries');
+    throw new Error(
+      'REDIS_HOSTS and REDIS_PORTS must have the same number of entries',
+    );
   }
 
   return hosts.map((host, index) => ({
@@ -34,7 +46,7 @@ describe('Redlock Integration Tests', () => {
 
   beforeAll(async () => {
     // Create Redis clients for all instances
-    redisClients = REDIS_INSTANCES.map(config =>
+    redisClients = REDIS_INSTANCES.map((config) =>
       createClient({
         socket: {
           host: config.host,
@@ -42,17 +54,17 @@ describe('Redlock Integration Tests', () => {
           // Disable retry to fail fast in tests
           reconnectStrategy: false,
         },
-      })
+      }),
     );
   });
 
   afterAll(async () => {
-    await Promise.all(redisClients.map(client => client.quit()));
+    await Promise.all(redisClients.map((client) => client.quit()));
   });
 
   beforeEach(async () => {
     // Reconnect clients (just in case they were disconnected in tests)
-    await Promise.allSettled(redisClients.map(client => client.connect()));
+    await Promise.allSettled(redisClients.map((client) => client.connect()));
 
     redlock = new Redlock(redisClients, {
       driftFactor: 0.01,
@@ -63,7 +75,7 @@ describe('Redlock Integration Tests', () => {
   });
 
   afterEach(async () => {
-    await Promise.allSettled(redisClients.map(client => client.flushAll()));
+    await Promise.allSettled(redisClients.map((client) => client.flushAll()));
   });
 
   // Helper to generate unique test keys
@@ -84,7 +96,9 @@ describe('Redlock Integration Tests', () => {
         expect(result.token.length).toBeGreaterThan(0);
         expect(result.expiresAt).toBeInstanceOf(Date);
         expect(result.success && result.effectiveValidityMs).toBeGreaterThan(0);
-        expect(result.success && result.acquiredInstances).toBeGreaterThanOrEqual(3); // Quorum for 5 instances
+        expect(
+          result.success && result.acquiredInstances,
+        ).toBeGreaterThanOrEqual(3); // Quorum for 5 instances
 
         // Release lock
         const released = await redlock.release(key, result.token);
@@ -132,7 +146,6 @@ describe('Redlock Integration Tests', () => {
 
       // Clean up
       await redlock.release(key, result.token);
-
     });
 
     it('should fail to extend with invalid token', async () => {
@@ -164,7 +177,7 @@ describe('Redlock Integration Tests', () => {
       if (!result.success) throw new Error('Failed to acquire lock');
 
       // Wait for lock to expire
-      await new Promise(resolve => setTimeout(resolve, shortTtl + 500));
+      await new Promise((resolve) => setTimeout(resolve, shortTtl + 500));
 
       // Should be able to acquire the same lock now
       const result2 = await redlock.acquire(key, TEST_TTL);
@@ -193,7 +206,6 @@ describe('Redlock Integration Tests', () => {
         expect(result.acquiredInstances).toBeGreaterThanOrEqual(3); // Still majority
         await redlock.release(key, result.token);
       }
-
     });
 
     it('should fail when majority of instances are unavailable', async () => {
@@ -201,7 +213,7 @@ describe('Redlock Integration Tests', () => {
 
       // Disconnect 3 out of 5 instances (no majority)
       const clientsToDisconnect = redisClients.slice(0, 3);
-      const disconnectPromises = clientsToDisconnect.map(async client => {
+      const disconnectPromises = clientsToDisconnect.map(async (client) => {
         if (client.isReady) {
           await client.quit();
         }
@@ -219,7 +231,7 @@ describe('Redlock Integration Tests', () => {
 
       // Disconnect 3 out of 5 instances (no majority)
       const clientsToDisconnect = redisClients.slice(0, 3);
-      const disconnectPromises = clientsToDisconnect.map(async client => {
+      const disconnectPromises = clientsToDisconnect.map(async (client) => {
         if (client.isReady) {
           await client.quit();
         }
@@ -232,28 +244,33 @@ describe('Redlock Integration Tests', () => {
         driftFactor: 0.01,
         retryDelayMs: 100,
         retryJitterMs: 50,
-        maxRetryAttempts: 3
+        maxRetryAttempts: 3,
       });
 
       setTimeout(async () => {
         // Reconnect the disconnected clients
-        await Promise.allSettled(clientsToDisconnect.map(client => client.connect()));
+        await Promise.allSettled(
+          clientsToDisconnect.map((client) => client.connect()),
+        );
       }, 200); // Wait for 200 ms to allow reconnection
 
       const result = await lock2.acquire(key, TEST_TTL);
       expect(result.success).toBe(true);
-    })
+    });
   });
 
   describe('Concurrent Access', () => {
     it('should handle multiple concurrent clients correctly', async () => {
       const key = generateTestKey();
       const numClients = 10;
-      const acquisitionPromises: Promise<{ clientId: number; result: RedlockResult }>[] = [];
+      const acquisitionPromises: Promise<{
+        clientId: number;
+        result: RedlockResult;
+      }>[] = [];
 
       // Create multiple concurrent acquisition attempts
       for (let i = 0; i < numClients; i++) {
-        const promise = redlock.acquire(key, TEST_TTL).then(result => ({
+        const promise = redlock.acquire(key, TEST_TTL).then((result) => ({
           clientId: i,
           result,
         }));
@@ -264,8 +281,8 @@ describe('Redlock Integration Tests', () => {
       const results = await Promise.all(acquisitionPromises);
 
       // Exactly one should succeed
-      const successful = results.filter(r => r.result.success);
-      const failed = results.filter(r => !r.result.success);
+      const successful = results.filter((r) => r.result.success);
+      const failed = results.filter((r) => !r.result.success);
 
       expect(successful).toHaveLength(1);
       expect(failed).toHaveLength(numClients - 1);

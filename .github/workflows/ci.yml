@@ -63,7 +63,6 @@ jobs:
           REDIS_HOSTS: localhost,localhost,localhost,localhost,localhost
           REDIS_PORTS: 6379,6380,6381,6382,6383
 
-
       # Nx Cloud recommends fixes for failures to help you get CI green faster. Learn more: https://nx.dev/ci/features/self-healing-ci
       - run: pnpm exec nx fix-ci
         if: always()

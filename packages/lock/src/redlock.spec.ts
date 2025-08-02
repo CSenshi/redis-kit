@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import type { RedisClientType } from 'redis';
-import { Redlock } from './redlock.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InvalidParameterError } from './errors.js';
+import { Redlock } from './redlock.js';
 
 // Helper to create mock Redis clients
 function createMockRedisClient(isReady = true) {
@@ -78,7 +78,14 @@ describe('Redlock', () => {
 
     it('should calculate effective validity correctly', () => {
       // Access private method for testing
-      const calculateEffectiveValidity = (redlock as unknown as { calculateEffectiveValidity: (ttlMs: number, elapsedMs: number) => number }).calculateEffectiveValidity.bind(redlock);
+      const calculateEffectiveValidity = (
+        redlock as unknown as {
+          calculateEffectiveValidity: (
+            ttlMs: number,
+            elapsedMs: number,
+          ) => number;
+        }
+      ).calculateEffectiveValidity.bind(redlock);
 
       const ttlMs = 10000; // 10 seconds
       const elapsedMs = 1000; // 1 second
@@ -88,15 +95,15 @@ describe('Redlock', () => {
       expect(result).toBe(8900);
     });
 
-
-
     it('should generate random retry delays', () => {
       redlock = new Redlock(mockClients as RedisClientType[], {
         retryDelayMs: 200,
         retryJitterMs: 100,
       });
 
-      const generateRetryDelay = (redlock as unknown as { generateRetryDelay: () => number }).generateRetryDelay.bind(redlock);
+      const generateRetryDelay = (
+        redlock as unknown as { generateRetryDelay: () => number }
+      ).generateRetryDelay.bind(redlock);
 
       const delay1 = generateRetryDelay();
       const delay2 = generateRetryDelay();
@@ -118,7 +125,11 @@ describe('Redlock', () => {
     });
 
     it('should correctly identify majority consensus', () => {
-      const hasMajorityConsensus = (redlock as unknown as { hasMajorityConsensus: (params: { successCount: number }) => boolean }).hasMajorityConsensus.bind(redlock);
+      const hasMajorityConsensus = (
+        redlock as unknown as {
+          hasMajorityConsensus: (params: { successCount: number }) => boolean;
+        }
+      ).hasMajorityConsensus.bind(redlock);
 
       // With 5 instances, quorum is 3
       expect(hasMajorityConsensus({ successCount: 3 })).toBe(true);
@@ -130,7 +141,14 @@ describe('Redlock', () => {
     });
 
     it('should validate timing constraints', () => {
-      const isTimingValid = (redlock as unknown as { isTimingValid: (params: { ttlMs: number; elapsedTime: number }) => boolean }).isTimingValid.bind(redlock);
+      const isTimingValid = (
+        redlock as unknown as {
+          isTimingValid: (params: {
+            ttlMs: number;
+            elapsedTime: number;
+          }) => boolean;
+        }
+      ).isTimingValid.bind(redlock);
 
       // Valid timing (effective validity > 1ms)
       expect(isTimingValid({ ttlMs: 10000, elapsedTime: 1000 })).toBe(true);
@@ -141,7 +159,19 @@ describe('Redlock', () => {
     });
 
     it('should evaluate acquisition attempts correctly', () => {
-      const evaluateAcquisitionAttempt = (redlock as unknown as { evaluateAcquisitionAttempt: (params: { successCount: number; ttlMs: number; elapsedTime: number }) => { success: boolean; effectiveValidityMs?: number; failureReason?: string } }).evaluateAcquisitionAttempt.bind(redlock);
+      const evaluateAcquisitionAttempt = (
+        redlock as unknown as {
+          evaluateAcquisitionAttempt: (params: {
+            successCount: number;
+            ttlMs: number;
+            elapsedTime: number;
+          }) => {
+            success: boolean;
+            effectiveValidityMs?: number;
+            failureReason?: string;
+          };
+        }
+      ).evaluateAcquisitionAttempt.bind(redlock);
 
       // Successful attempt
       const successfulAttempt = {
@@ -161,7 +191,9 @@ describe('Redlock', () => {
         elapsedTime: 1000,
       };
 
-      const consensusResult = evaluateAcquisitionAttempt(failedConsensusAttempt);
+      const consensusResult = evaluateAcquisitionAttempt(
+        failedConsensusAttempt,
+      );
       expect(consensusResult.success).toBe(false);
       expect(consensusResult.failureReason).toContain('Insufficient consensus');
 
@@ -174,7 +206,9 @@ describe('Redlock', () => {
 
       const timingResult = evaluateAcquisitionAttempt(failedTimingAttempt);
       expect(timingResult.success).toBe(false);
-      expect(timingResult.failureReason).toContain('Timing constraint violated');
+      expect(timingResult.failureReason).toContain(
+        'Timing constraint violated',
+      );
     });
   });
 
@@ -184,7 +218,9 @@ describe('Redlock', () => {
     });
 
     it('should validate key parameter', () => {
-      const validateKey = (redlock as unknown as { validateKey: (key: unknown) => void }).validateKey.bind(redlock);
+      const validateKey = (
+        redlock as unknown as { validateKey: (key: unknown) => void }
+      ).validateKey.bind(redlock);
 
       expect(() => validateKey('valid-key')).not.toThrow();
       expect(() => validateKey('')).toThrow(InvalidParameterError);
@@ -194,7 +230,9 @@ describe('Redlock', () => {
     });
 
     it('should validate token parameter', () => {
-      const validateToken = (redlock as unknown as { validateToken: (token: unknown) => void }).validateToken.bind(redlock);
+      const validateToken = (
+        redlock as unknown as { validateToken: (token: unknown) => void }
+      ).validateToken.bind(redlock);
 
       expect(() => validateToken('valid-token')).not.toThrow();
       expect(() => validateToken('')).toThrow(InvalidParameterError);
@@ -204,13 +242,17 @@ describe('Redlock', () => {
     });
 
     it('should validate TTL parameter', () => {
-      const validateTtl = (redlock as unknown as { validateTtl: (ttl: unknown) => void }).validateTtl.bind(redlock);
+      const validateTtl = (
+        redlock as unknown as { validateTtl: (ttl: unknown) => void }
+      ).validateTtl.bind(redlock);
 
       expect(() => validateTtl(1000)).not.toThrow();
       expect(() => validateTtl(0)).toThrow(InvalidParameterError);
       expect(() => validateTtl(-1000)).toThrow(InvalidParameterError);
       expect(() => validateTtl(1.5)).toThrow(InvalidParameterError);
-      expect(() => validateTtl('1000' as unknown)).toThrow(InvalidParameterError);
+      expect(() => validateTtl('1000' as unknown)).toThrow(
+        InvalidParameterError,
+      );
     });
   });
 });

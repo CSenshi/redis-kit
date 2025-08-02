@@ -1,8 +1,12 @@
 import type { RedisClientType } from 'redis';
-import type { RedlockResult, RedlockOptions } from './types.js';
 import { InvalidParameterError } from './errors.js';
-import { ACQUIRE_SCRIPT, RELEASE_SCRIPT, EXTEND_SCRIPT } from './lua-scripts.js';
+import {
+  ACQUIRE_SCRIPT,
+  EXTEND_SCRIPT,
+  RELEASE_SCRIPT,
+} from './lua-scripts.js';
 import { generateToken } from './token.js';
+import type { RedlockOptions, RedlockResult } from './types.js';
 
 /**
  * Redlock distributed lock implementation following the official Redis Redlock algorithm.
@@ -40,7 +44,7 @@ export class Redlock {
       throw new InvalidParameterError(
         'redisClients',
         redisClients,
-        'non-empty array of Redis clients'
+        'non-empty array of Redis clients',
       );
     }
 
@@ -81,12 +85,12 @@ export class Redlock {
       // Try to acquire lock on all instances
       const results = await Promise.allSettled(
         this.clients.map((client) =>
-          this.acquireOnInstance(client, key, token, ttlMs)
-        )
+          this.acquireOnInstance(client, key, token, ttlMs),
+        ),
       );
 
       const successCount = results.filter(
-        (r) => r.status === 'fulfilled' && r.value
+        (r) => r.status === 'fulfilled' && r.value,
       ).length;
       const elapsedTime = Date.now() - startTime;
 
@@ -109,7 +113,9 @@ export class Redlock {
 
       // Failed - cleanup partial acquisitions
       await Promise.allSettled(
-        this.clients.map((client) => this.releaseOnInstance(client, key, token))
+        this.clients.map((client) =>
+          this.releaseOnInstance(client, key, token),
+        ),
       );
 
       // Retry with random delay
@@ -131,11 +137,11 @@ export class Redlock {
     this.validateToken(token);
 
     const results = await Promise.allSettled(
-      this.clients.map((client) => this.releaseOnInstance(client, key, token))
+      this.clients.map((client) => this.releaseOnInstance(client, key, token)),
     );
 
     const successCount = results.filter(
-      (r) => r.status === 'fulfilled' && r.value
+      (r) => r.status === 'fulfilled' && r.value,
     ).length;
 
     return successCount > 0;
@@ -152,12 +158,12 @@ export class Redlock {
 
     const results = await Promise.allSettled(
       this.clients.map((client) =>
-        this.extendOnInstance(client, key, token, ttlMs)
-      )
+        this.extendOnInstance(client, key, token, ttlMs),
+      ),
     );
 
     const successCount = results.filter(
-      (r) => r.status === 'fulfilled' && r.value
+      (r) => r.status === 'fulfilled' && r.value,
     ).length;
 
     return successCount >= this.quorum;
@@ -167,7 +173,7 @@ export class Redlock {
     client: RedisClientType,
     key: string,
     token: string,
-    ttlMs: number
+    ttlMs: number,
   ): Promise<boolean> {
     try {
       const result = (await client.eval(ACQUIRE_SCRIPT, {
@@ -184,7 +190,7 @@ export class Redlock {
   private async releaseOnInstance(
     client: RedisClientType,
     key: string,
-    token: string
+    token: string,
   ): Promise<boolean> {
     try {
       const result = (await client.eval(RELEASE_SCRIPT, {
@@ -202,7 +208,7 @@ export class Redlock {
     client: RedisClientType,
     key: string,
     token: string,
-    ttlMs: number
+    ttlMs: number,
   ): Promise<boolean> {
     try {
       const result = (await client.eval(EXTEND_SCRIPT, {
@@ -222,7 +228,7 @@ export class Redlock {
         throw new InvalidParameterError(
           'driftFactor',
           options.driftFactor,
-          'number between 0 and 0.1'
+          'number between 0 and 0.1',
         );
       }
     }
@@ -231,7 +237,7 @@ export class Redlock {
       throw new InvalidParameterError(
         'retryDelayMs',
         options.retryDelayMs,
-        'non-negative number'
+        'non-negative number',
       );
     }
 
@@ -242,7 +248,7 @@ export class Redlock {
       throw new InvalidParameterError(
         'maxRetryAttempts',
         options.maxRetryAttempts,
-        'non-negative number'
+        'non-negative number',
       );
     }
   }
@@ -266,7 +272,7 @@ export class Redlock {
   }): boolean {
     const effectiveValidity = this.calculateEffectiveValidity(
       params.ttlMs,
-      params.elapsedTime
+      params.elapsedTime,
     );
 
     return effectiveValidity > 1;
@@ -310,7 +316,7 @@ export class Redlock {
 
     const effectiveValidityMs = this.calculateEffectiveValidity(
       attempt.ttlMs,
-      attempt.elapsedTime
+      attempt.elapsedTime,
     );
     return { success: true, effectiveValidityMs };
   }

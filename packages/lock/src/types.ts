@@ -4,13 +4,13 @@
 export interface RedlockOptions {
   /** Clock drift compensation factor (default: 0.01) */
   driftFactor?: number;
-  
+
   /** Base retry delay in milliseconds (default: 200) */
   retryDelayMs?: number;
-  
+
   /** Random jitter added to retry delay (default: 100) */
   retryJitterMs?: number;
-  
+
   /** Maximum retry attempts (default: 3) */
   maxRetryAttempts?: number;
 }

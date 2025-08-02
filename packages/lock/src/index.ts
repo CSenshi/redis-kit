@@ -3,7 +3,7 @@
  *
  * This library provides both single-instance and distributed (Redlock) implementations
  * of Redis-based locking. Choose the appropriate implementation based on your needs:
- * 
+ *
  * - **RedisLock**: Simple, fast locking for single Redis instance deployments
  * - **Redlock**: Distributed locking across multiple Redis instances with stronger safety guarantees
  *
@@ -27,7 +27,7 @@
  *   }
  * }
  * ```
- * 
+ *
  * @example Distributed locking (Redlock)
  * ```typescript
  * import { createClient } from 'redis';
@@ -41,12 +41,12 @@
  *   createClient({ host: 'redis4.example.com' }),
  *   createClient({ host: 'redis5.example.com' })
  * ];
- * 
+ *
  * await Promise.all(clients.map(client => client.connect()));
- * 
+ *
  * const redlock = new Redlock(clients);
  * const result = await redlock.acquire('my-resource', 30000);
- * 
+ *
  * if (result.success) {
  *   try {
  *     console.log(`Distributed lock acquired on ${result.acquiredInstances} instances`);
@@ -68,4 +68,8 @@ export type { RedlockOptions, RedlockResult } from './types.js';
 export { RedisConnectionError, InvalidParameterError } from './errors.js';
 
 // Utility functions (for advanced usage)
-export { ACQUIRE_SCRIPT, RELEASE_SCRIPT, EXTEND_SCRIPT } from './lua-scripts.js';
+export {
+  ACQUIRE_SCRIPT,
+  RELEASE_SCRIPT,
+  EXTEND_SCRIPT,
+} from './lua-scripts.js';
