@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { createClient, type RedisClientType } from 'redis';
 import { Redlock } from './redlock.js';
+import type { RedlockResult } from './redlock-types.js';
 
 // Integration test configuration
 const REDIS_INSTANCES = [
@@ -235,7 +236,7 @@ describe('Redlock Integration Tests', () => {
     it('should handle multiple concurrent clients correctly', async () => {
       const key = generateTestKey();
       const numClients = 10;
-      const acquisitionPromises: Promise<any>[] = [];
+      const acquisitionPromises: Promise<{ clientId: number; result: RedlockResult }>[] = [];
 
       // Create multiple concurrent acquisition attempts
       for (let i = 0; i < numClients; i++) {
