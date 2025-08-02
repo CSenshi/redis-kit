@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { createClient, type RedisClientType } from 'redis';
 import { Redlock } from './redlock.js';
-import type { RedlockResult } from './redlock-types.js';
+import type { RedlockResult } from './types.js';
 
 // Helper function to parse REDIS_HOSTS environment variable
 function getRedisConfig(): Array<{ host: string; port: number }> {

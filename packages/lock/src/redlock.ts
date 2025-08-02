@@ -1,7 +1,7 @@
 import type { RedisClientType } from 'redis';
-import type { RedlockResult, RedlockOptions } from './redlock-types.js';
+import type { RedlockResult, RedlockOptions } from './types.js';
 import { InvalidParameterError } from './errors.js';
-import { ACQUIRE_SCRIPT, RELEASE_SCRIPT, EXTEND_SCRIPT } from './scripts.js';
+import { ACQUIRE_SCRIPT, RELEASE_SCRIPT, EXTEND_SCRIPT } from './lua-scripts.js';
 import { generateToken } from './token.js';
 
 /**

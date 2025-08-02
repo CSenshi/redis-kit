@@ -60,17 +60,12 @@
  * @packageDocumentation
  */
 
-// Single-instance lock implementation
-export { RedisLock } from './lock.js';
-export type { LockResult, RedisLockOptions } from './types.js';
-
 // Distributed lock implementation (Redlock algorithm)
 export { Redlock } from './redlock.js';
-export type { RedlockOptions, RedlockResult } from './redlock-types.js';
+export type { RedlockOptions, RedlockResult } from './types.js';
 
 // Common error classes
 export { RedisConnectionError, InvalidParameterError } from './errors.js';
 
 // Utility functions (for advanced usage)
-export { generateToken } from './token.js';
-export { ACQUIRE_SCRIPT, RELEASE_SCRIPT, EXTEND_SCRIPT } from './scripts.js';
+export { ACQUIRE_SCRIPT, RELEASE_SCRIPT, EXTEND_SCRIPT } from './lua-scripts.js';
