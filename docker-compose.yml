@@ -1,25 +1,20 @@
 services:
   redis1:
     image: redis:8-alpine
-    ports:
-      - '6379:6379'
+    ports: ['6379:6379']
 
   redis2:
     image: redis:8-alpine
-    ports:
-      - '6380:6379'
+    ports: ['6380:6379']
 
   redis3:
     image: redis:8-alpine
-    ports:
-      - '6381:6379'
+    ports: ['6381:6379']
 
   redis4:
     image: redis:8-alpine
-    ports:
-      - '6382:6379'
+    ports: ['6382:6379']
 
   redis5:
     image: redis:8-alpine
-    ports:
-      - '6383:6379'
+    ports: ['6383:6379']

@@ -3,14 +3,27 @@ import { createClient, type RedisClientType } from 'redis';
 import { Redlock } from './redlock.js';
 import type { RedlockResult } from './redlock-types.js';
 
+// Helper function to parse REDIS_HOSTS environment variable
+function getRedisConfig(): Array<{ host: string; port: number }> {
+  const redisHosts = process.env.REDIS_HOSTS ?? 'localhost,localhost,localhost,localhost,localhost';
+  const redisPorts = process.env.REDIS_PORTS ?? '6379,6380,6381,6382,6383';
+
+  console.log(`Using Redis hosts: ${redisHosts}`);
+  console.log(`Using Redis ports: ${redisPorts}`);
+  const hosts = redisHosts.split(',').map(host => host.trim());
+  const ports = redisPorts.split(',').map(port => parseInt(port.trim(), 10));
+  if (hosts.length !== ports.length) {
+    throw new Error('REDIS_HOSTS and REDIS_PORTS must have the same number of entries');
+  }
+
+  return hosts.map((host, index) => ({
+    host,
+    port: ports[index],
+  }));
+}
+
 // Integration test configuration
-const REDIS_INSTANCES = [
-  { host: 'localhost', port: 6379 },
-  { host: 'localhost', port: 6380 },
-  { host: 'localhost', port: 6381 },
-  { host: 'localhost', port: 6382 },
-  { host: 'localhost', port: 6383 },
-];
+const REDIS_INSTANCES = getRedisConfig();
 
 const TEST_KEY_PREFIX = 'redlock:test:';
 const TEST_TTL = 5000; // 5 seconds

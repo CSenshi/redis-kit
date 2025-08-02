@@ -1,6 +1,24 @@
 import { createClient, RedisClientType } from 'redis';
 import { RedisLock } from './lock.js';
 
+// Helper function to parse REDIS_HOSTS environment variable
+function getRedisConfig(): Array<{ host: string; port: number }> {
+  const redisHosts = process.env.REDIS_HOSTS ?? 'localhost,localhost,localhost,localhost,localhost';
+  const redisPorts = process.env.REDIS_PORTS ?? '6379,6380,6381,6382,6383';
+
+  const hosts = redisHosts.split(',').map(host => host.trim());
+  const ports = redisPorts.split(',').map(port => parseInt(port.trim(), 10));
+  if (hosts.length !== ports.length) {
+    throw new Error('REDIS_HOSTS and REDIS_PORTS must have the same number of entries');
+  }
+
+  return hosts.map((host, index) => ({
+    host,
+    port: ports[index],
+  }));
+}
+
+
 test.concurrent('Integration tests', () => {
   // Integration tests require a running Redis instance
   // These tests can be skipped if Redis is not available
@@ -9,11 +27,15 @@ test.concurrent('Integration tests', () => {
     let lock: RedisLock;
 
     beforeAll(async () => {
-      // Try to connect to Redis (default localhost:6379)
+      const config = getRedisConfig();
+      const firstConfig = config[0];
+      if (!firstConfig) {
+        throw new Error('No Redis configuration found. Please set REDIS_HOSTS and REDIS_PORTS environment variables.');
+      }
       redisClient = createClient({
         socket: {
-          host: process.env.REDIS_HOST || 'localhost',
-          port: parseInt(process.env.REDIS_PORT || '6379'),
+          host: firstConfig.host,
+          port: firstConfig.port,
         },
       });
 
