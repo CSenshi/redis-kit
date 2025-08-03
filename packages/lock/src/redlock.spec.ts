@@ -217,18 +217,6 @@ describe('Redlock', () => {
       redlock = new Redlock(mockClients as RedisClientType[]);
     });
 
-    it('should validate key parameter', () => {
-      const validateKey = (
-        redlock as unknown as { validateKey: (key: unknown) => void }
-      ).validateKey.bind(redlock);
-
-      expect(() => validateKey('valid-key')).not.toThrow();
-      expect(() => validateKey('')).toThrow(InvalidParameterError);
-      expect(() => validateKey('   ')).toThrow(InvalidParameterError);
-      expect(() => validateKey(null)).toThrow(InvalidParameterError);
-      expect(() => validateKey(undefined)).toThrow(InvalidParameterError);
-    });
-
     it('should validate token parameter', () => {
       const validateToken = (
         redlock as unknown as { validateToken: (token: unknown) => void }

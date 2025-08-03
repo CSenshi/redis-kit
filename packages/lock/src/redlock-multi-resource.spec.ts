@@ -104,9 +104,18 @@ describe('Redlock Multi-Resource Support', () => {
 
     it('should handle acquisition failure', async () => {
       // Mock failure on majority of clients (return 0 for failure)
-      mockClients[0].eval = vi.fn().mockResolvedValue(0);
-      mockClients[1].eval = vi.fn().mockResolvedValue(0);
-      mockClients[2].eval = vi.fn().mockResolvedValue(1); // Success on one client
+      Object.defineProperty(mockClients[0], 'eval', {
+        value: vi.fn().mockResolvedValue(0),
+        writable: true,
+      });
+      Object.defineProperty(mockClients[1], 'eval', {
+        value: vi.fn().mockResolvedValue(0),
+        writable: true,
+      });
+      Object.defineProperty(mockClients[2], 'eval', {
+        value: vi.fn().mockResolvedValue(1),
+        writable: true,
+      }); // Success on one client
 
       const lock = await redlock.acquire(['user:123', 'order:456'], 5000);
 
@@ -131,7 +140,10 @@ describe('Redlock Multi-Resource Support', () => {
     it('should throw error if acquisition fails', async () => {
       // Mock failure on all clients
       mockClients.forEach((client) => {
-        client.eval = vi.fn().mockResolvedValue(0);
+        Object.defineProperty(client, 'eval', {
+          value: vi.fn().mockResolvedValue(0),
+          writable: true,
+        });
       });
 
       const mockFn = vi.fn();
@@ -150,10 +162,13 @@ describe('Redlock Multi-Resource Support', () => {
 
       // Mock successful acquisition and release
       mockClients.forEach((client) => {
-        client.eval = vi
-          .fn()
-          .mockResolvedValueOnce(1) // acquire (success)
-          .mockResolvedValueOnce(2); // release (2 keys released)
+        Object.defineProperty(client, 'eval', {
+          value: vi
+            .fn()
+            .mockResolvedValueOnce(1) // acquire (success)
+            .mockResolvedValueOnce(2), // release (2 keys released)
+          writable: true,
+        });
       });
 
       await expect(
@@ -208,17 +223,20 @@ describe('Redlock Multi-Resource Support', () => {
     beforeEach(async () => {
       // Ensure mocks return success for acquisition
       mockClients.forEach((client) => {
-        client.eval = vi
-          .fn()
-          .mockImplementation((script: string, options: { keys: string[] }) => {
-            // ACQUIRE_SCRIPT and EXTEND_SCRIPT return 1 for success
-            // RELEASE_SCRIPT returns the count of keys
-            if (script.includes('MGET') || script.includes('SET')) {
-              return Promise.resolve(1);
-            } else {
-              return Promise.resolve(options.keys.length);
-            }
-          });
+        Object.defineProperty(client, 'eval', {
+          value: vi
+            .fn()
+            .mockImplementation((script: string, options: { keys: string[] }) => {
+              // ACQUIRE_SCRIPT and EXTEND_SCRIPT return 1 for success
+              // RELEASE_SCRIPT returns the count of keys
+              if (script.includes('MGET') || script.includes('SET')) {
+                return Promise.resolve(1);
+              } else {
+                return Promise.resolve(options.keys.length);
+              }
+            }),
+          writable: true,
+        });
       });
 
       lock = (await redlock.acquire(['user:123', 'order:456'], 5000))!;
@@ -280,7 +298,10 @@ describe('Redlock Multi-Resource Support', () => {
     it('should provide clear error messages for multi-resource failures', async () => {
       // Mock acquisition failure
       mockClients.forEach((client) => {
-        client.eval = vi.fn().mockResolvedValue(0);
+        Object.defineProperty(client, 'eval', {
+          value: vi.fn().mockResolvedValue(0),
+          writable: true,
+        });
       });
 
       await expect(
@@ -294,9 +315,18 @@ describe('Redlock Multi-Resource Support', () => {
 
     it('should handle Redis errors gracefully', async () => {
       // Mock Redis error
-      mockClients[0].eval = vi.fn().mockRejectedValue(new Error('Redis error'));
-      mockClients[1].eval = vi.fn().mockResolvedValue(1); // Success
-      mockClients[2].eval = vi.fn().mockResolvedValue(1); // Success
+      Object.defineProperty(mockClients[0], 'eval', {
+        value: vi.fn().mockRejectedValue(new Error('Redis error')),
+        writable: true,
+      });
+      Object.defineProperty(mockClients[1], 'eval', {
+        value: vi.fn().mockResolvedValue(1), // Success
+        writable: true,
+      });
+      Object.defineProperty(mockClients[2], 'eval', {
+        value: vi.fn().mockResolvedValue(1), // Success
+        writable: true,
+      });
 
       const lock = await redlock.acquire(['user:123', 'order:456'], 5000);
 

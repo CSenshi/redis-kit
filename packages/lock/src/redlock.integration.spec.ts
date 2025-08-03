@@ -699,7 +699,7 @@ describe('Redlock Integration Tests', () => {
       // Test that users cannot directly call release and extend - they should use RedlockInstance
       // Note: TypeScript private methods are still accessible at runtime, but this documents the intended API
       expect(typeof (redlock as any).release).toBe('function');
-      expect(typeof (redlock as unknown).extend).toBe('function');
+      expect(typeof (redlock as any).extend).toBe('function');
 
       // The real protection comes from the clean public interface design - users should only see:
       // redlock.acquire() and redlock.withLock() in their IDE
