@@ -1,90 +1,90 @@
+<div align="center">
+
+<img src="docs/images/logo.png" alt="RedisKit Logo" width="200" height="200">
+
 # RedisKit
 
-<a alt="Nx logo" href="https://nx.dev" target="_blank" rel="noreferrer"><img src="https://raw.githubusercontent.com/nrwl/nx/master/images/nx-logo.png" width="45"></a>
+**Production-ready Redis utilities and libraries for Node.js applications**
 
-✨ Your new, shiny [Nx workspace](https://nx.dev) is almost ready ✨.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-green.svg)](https://nodejs.org/)
+[![Nx](https://img.shields.io/badge/Built%20with-Nx-143055.svg)](https://nx.dev)
 
-[Learn more about this workspace setup and its capabilities](https://nx.dev/nx-api/js?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
+_Distributed locking • High performance • Type-safe • Battle-tested_
 
-## Finish your CI setup
+</div>
 
-[Click here to finish setting up your workspace!](https://cloud.nx.app/connect/wzFnFTwl28)
+## Overview
 
+RedisKit is a collection of production-ready Redis utilities designed for modern Node.js applications. Built with TypeScript and focused on reliability, performance, and developer experience.
 
-## Generate a library
+## Packages
 
-```sh
-npx nx g @nx/js:lib packages/pkg1 --publishable --importPath=@my-org/pkg1
+### [@redis-kit/lock](./packages/lock)
+
+Distributed locking library implementing the Redlock algorithm with automatic lifecycle management.
+
+```bash
+npm install @redis-kit/lock
 ```
 
-## Run tasks
+**Key Features:**
+- Fault-tolerant distributed locking across multiple Redis instances
+- Automatic lock extension for long-running operations
+- Full TypeScript support with comprehensive type definitions
+- Production-tested with clock drift compensation and retry logic
 
-To build the library use:
+## Quick Start
 
-```sh
-npx nx build pkg1
+```typescript
+import { Redlock } from '@redis-kit/lock';
+import { createClient } from 'redis';
+
+// Set up Redis clients
+const clients = [
+  createClient({ host: 'redis1.example.com' }),
+  createClient({ host: 'redis2.example.com' }),
+  createClient({ host: 'redis3.example.com' })
+];
+
+await Promise.all(clients.map(client => client.connect()));
+
+// Create distributed lock
+const redlock = new Redlock(clients);
+
+// Use the lock
+await redlock.withLock('critical-resource', 30000, async () => {
+  // Your critical section here
+  await performCriticalOperation();
+});
 ```
 
-To run any task with Nx use:
+## Development
 
-```sh
-npx nx <target> <project-name>
-```
+This project uses [Nx](https://nx.dev) for monorepo management and build orchestration.
 
-These targets are either [inferred automatically](https://nx.dev/concepts/inferred-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or defined in the `project.json` or `package.json` files.
+### Prerequisites
 
-[More about running tasks in the docs &raquo;](https://nx.dev/features/run-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+- Node.js 18+
+- pnpm (recommended package manager)
 
-## Versioning and releasing
+## Architecture
 
-To version and release the library use
+RedisKit follows these principles:
 
-```
-npx nx release
-```
+- **Type Safety**: Full TypeScript support with strict typing
+- **Production Ready**: Battle-tested with comprehensive error handling
+- **Developer Experience**: Simple APIs with sensible defaults
+- **Performance**: Optimized for high-throughput applications
+- **Reliability**: Fault-tolerant designs with proper retry mechanisms
 
-Pass `--dry-run` to see what would happen without actually releasing the library.
+## License
 
-[Learn more about Nx release &raquo;](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+MIT - see the [LICENSE](LICENSE) file for details.
 
-## Keep TypeScript project references up to date
+## Support
 
-Nx automatically updates TypeScript [project references](https://www.typescriptlang.org/docs/handbook/project-references.html) in `tsconfig.json` files to ensure they remain accurate based on your project dependencies (`import` or `require` statements). This sync is automatically done when running tasks such as `build` or `typecheck`, which require updated references to function correctly.
-
-To manually trigger the process to sync the project graph dependencies information to the TypeScript project references, run the following command:
-
-```sh
-npx nx sync
-```
-
-You can enforce that the TypeScript project references are always in the correct state when running in CI by adding a step to your CI job configuration that runs the following command:
-
-```sh
-npx nx sync:check
-```
-
-[Learn more about nx sync](https://nx.dev/reference/nx-commands#sync)
-
-
-[Learn more about Nx on CI](https://nx.dev/ci/intro/ci-with-nx#ready-get-started-with-your-provider?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Install Nx Console
-
-Nx Console is an editor extension that enriches your developer experience. It lets you run tasks, generate code, and improves code autocompletion in your IDE. It is available for VSCode and IntelliJ.
-
-[Install Nx Console &raquo;](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Useful links
-
-Learn more:
-
-- [Learn more about this workspace setup](https://nx.dev/nx-api/js?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects)
-- [Learn about Nx on CI](https://nx.dev/ci/intro/ci-with-nx?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Releasing Packages with Nx release](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [What are Nx plugins?](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-And join the Nx community:
-- [Discord](https://go.nx.dev/community)
-- [Follow us on X](https://twitter.com/nxdevtools) or [LinkedIn](https://www.linkedin.com/company/nrwl)
-- [Our Youtube channel](https://www.youtube.com/@nxdevtools)
-- [Our blog](https://nx.dev/blog?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+- 📖 [Documentation](https://redis-kit.dev) (coming soon)
+- 🐛 [Issue Tracker](https://github.com/your-org/redis-kit/issues)
+- 💬 [Discussions](https://github.com/your-org/redis-kit/discussions)
