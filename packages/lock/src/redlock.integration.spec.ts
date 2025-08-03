@@ -588,6 +588,95 @@ describe('Redlock Integration Tests', () => {
     });
   });
 
+  describe('Multi resource locking', () => {
+    it('Should lock multiple resources', async () => {
+      const keys = [generateTestKey(), generateTestKey(), generateTestKey()];
+
+      // Acquire lock on multiple resources
+      const multiLock = await redlock.acquire(keys, TEST_TTL);
+      expect(multiLock).not.toBeNull();
+
+      if (!multiLock) throw new Error('Failed to acquire multi-resource lock');
+
+      // Verify lock properties
+      expect(multiLock.resourceKeys).toEqual(keys.sort());
+      expect(multiLock.isValid).toBe(true);
+      expect(multiLock.isReleased).toBe(false);
+
+      // Release the lock
+      const released = await multiLock.release();
+      expect(released).toBe(true);
+      expect(multiLock.isReleased).toBe(true);
+    });
+
+    it('No resource can be acquired after multi resource lock', async () => {
+      const keys = [generateTestKey(), generateTestKey(), generateTestKey()];
+
+      // Acquire lock on multiple resources
+      const multiLock = await redlock.acquire(keys, TEST_TTL);
+      expect(multiLock).not.toBeNull();
+
+      if (!multiLock) throw new Error('Failed to acquire multi-resource lock');
+
+      // Try to acquire individual locks on each resource - all should fail
+      for (const key of keys) {
+        const individualLock = await redlock.acquire(key, TEST_TTL);
+        expect(individualLock).toBeNull();
+      }
+
+      // Try to acquire another multi-resource lock that overlaps - should fail
+      const overlappingKeys = [keys[0], generateTestKey()];
+      const overlappingLock = await redlock.acquire(overlappingKeys, TEST_TTL);
+      expect(overlappingLock).toBeNull();
+
+      // Release the original lock
+      await multiLock.release();
+
+      // Now individual locks should succeed
+      for (const key of keys) {
+        const individualLock = await redlock.acquire(key, TEST_TTL);
+        expect(individualLock).not.toBeNull();
+        if (individualLock) {
+          await individualLock.release();
+        }
+      }
+    });
+
+    it('no resource can be acquired after partial multi resource lock', async () => {
+      const keys = [generateTestKey(), generateTestKey(), generateTestKey()];
+
+      // First, acquire a lock on one of the resources to create a partial conflict
+      const blockingLock = await redlock.acquire(keys[1], TEST_TTL);
+      expect(blockingLock).not.toBeNull();
+
+      if (!blockingLock) throw new Error('Failed to acquire blocking lock');
+
+      // Try to acquire multi-resource lock - should fail due to partial conflict
+      const multiLock = await redlock.acquire(keys, TEST_TTL);
+      expect(multiLock).toBeNull();
+
+      // Verify that the other resources are still available individually
+      const lock1 = await redlock.acquire(keys[0], TEST_TTL);
+      expect(lock1).not.toBeNull();
+
+      const lock3 = await redlock.acquire(keys[2], TEST_TTL);
+      expect(lock3).not.toBeNull();
+
+      // Clean up
+      await blockingLock.release();
+      if (lock1) await lock1.release();
+      if (lock3) await lock3.release();
+
+      // Now the multi-resource lock should succeed
+      const finalMultiLock = await redlock.acquire(keys, TEST_TTL);
+      expect(finalMultiLock).not.toBeNull();
+
+      if (finalMultiLock) {
+        await finalMultiLock.release();
+      }
+    });
+  });
+
   describe('Error Handling', () => {
     it('should handle network partitions gracefully', async () => {
       const key = generateTestKey();
@@ -611,7 +700,7 @@ describe('Redlock Integration Tests', () => {
       // Test that users cannot directly call release and extend - they should use RedlockInstance
       // Note: TypeScript private methods are still accessible at runtime, but this documents the intended API
       expect(typeof (redlock as any).release).toBe('function');
-      expect(typeof (redlock as any).extend).toBe('function');
+      expect(typeof (redlock as unknown).extend).toBe('function');
 
       // The real protection comes from the clean public interface design - users should only see:
       // redlock.acquire() and redlock.withLock() in their IDE

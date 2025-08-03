@@ -51,7 +51,9 @@ describe('Redlock Multi-Resource Support', () => {
     });
 
     it('should deduplicate resources', async () => {
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {
+        return;
+      });
 
       const lock = await redlock.acquire(
         ['user:123', 'order:456', 'user:123'],
@@ -287,7 +289,9 @@ describe('Redlock Multi-Resource Support', () => {
       });
 
       await expect(
-        redlock.withLock(['user:123', 'order:456'], 5000, async () => {}),
+        redlock.withLock(['user:123', 'order:456'], 5000, async () => {
+          return;
+        }),
       ).rejects.toThrow(
         'Failed to acquire lock for resource: [user:123, order:456]',
       );
