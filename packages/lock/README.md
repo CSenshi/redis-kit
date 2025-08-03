@@ -15,9 +15,10 @@
 _Fault-tolerant • Auto-extension • Redlock algorithm • Production-tested_
 
 </div>
+
 ## Features
 
-- **Distributed Locking**: Implements the official Redlock algorithm for multi-instance Redis deployments
+- **Distributed Locking**: Implements the official [Redlock]() algorithm for multi-instance Redis deployments
 - **Automatic Extension**: Prevents lock expiration during long-running operations with built-in auto-extension
 - **Fault Tolerance**: Requires majority consensus from Redis instances, works even when some instances fail
 - **TypeScript Native**: Full type safety with comprehensive TypeScript definitions included
@@ -39,13 +40,12 @@ import { createClient } from 'redis';
 const clients = [
   createClient({ host: 'redis1.example.com' }),
   createClient({ host: 'redis2.example.com' }),
-  createClient({ host: 'redis3.example.com' })
+  createClient({ host: 'redis3.example.com' }),
 ];
 
-await Promise.all(clients.map(client => client.connect()));
+await Promise.all(clients.map((client) => client.connect()));
 
 const redlock = new Redlock(clients);
-
 await redlock.withLock('user:123:profile', 30000, async () => {
   // Critical section - only one process can execute this
   await updateUserProfile(userId, profileData);
@@ -57,6 +57,7 @@ await redlock.withLock('user:123:profile', 30000, async () => {
 ### `Redlock`
 
 #### Constructor
+
 ```typescript
 new Redlock(redisClients: RedisClientType[], options?: RedlockOptions)
 ```
@@ -64,18 +65,22 @@ new Redlock(redisClients: RedisClientType[], options?: RedlockOptions)
 #### Methods
 
 ##### `acquire(key: string, ttlMs: number): Promise<RedlockInstance | null>`
+
 Attempts to acquire a distributed lock.
 
 ##### `withLock<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T>`
+
 Executes a function within a lock context with automatic management.
 
 ### `RedlockInstance`
 
 #### Properties
+
 - `isValid: boolean` - Whether the lock is currently valid
 - `resourceKey: string` - The resource key this lock protects
 
 #### Methods
+
 - `release(): Promise<boolean>` - Releases the lock
 - `extend(newTtlMs?: number): Promise<boolean>` - Extends the lock's TTL
 - `startAutoExtension(thresholdMs?: number): void` - Starts automatic extension
@@ -84,10 +89,10 @@ Executes a function within a lock context with automatic management.
 
 ```typescript
 interface RedlockOptions {
-  driftFactor?: number;        // Clock drift compensation (default: 0.01)
-  retryDelayMs?: number;       // Base retry delay (default: 200)
-  retryJitterMs?: number;      // Random jitter (default: 100)
-  maxRetryAttempts?: number;   // Maximum retries (default: 3)
+  driftFactor?: number; // Clock drift compensation (default: 0.01)
+  retryDelayMs?: number; // Base retry delay (default: 200)
+  retryJitterMs?: number; // Random jitter (default: 100)
+  maxRetryAttempts?: number; // Maximum retries (default: 3)
 }
 ```
 
@@ -117,7 +122,7 @@ const lock = await redlock.acquire('data-migration', 30000);
 
 if (lock) {
   lock.startAutoExtension(5000); // Extend 5 seconds before expiry
-  
+
   try {
     for (const batch of dataBatches) {
       await migrateBatch(batch);
@@ -135,7 +140,7 @@ const redlock = new Redlock(clients, {
   driftFactor: 0.01,
   retryDelayMs: 200,
   retryJitterMs: 100,
-  maxRetryAttempts: 5
+  maxRetryAttempts: 5,
 });
 
 try {
@@ -146,7 +151,5 @@ try {
   console.error('Lock operation failed:', error.message);
 }
 ```
-
-
 
 MIT

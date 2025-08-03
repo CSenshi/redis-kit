@@ -30,6 +30,7 @@ npm install @redis-kit/lock
 ```
 
 **Key Features:**
+
 - Fault-tolerant distributed locking across multiple Redis instances
 - Automatic lock extension for long-running operations
 - Full TypeScript support with comprehensive type definitions
@@ -45,10 +46,10 @@ import { createClient } from 'redis';
 const clients = [
   createClient({ host: 'redis1.example.com' }),
   createClient({ host: 'redis2.example.com' }),
-  createClient({ host: 'redis3.example.com' })
+  createClient({ host: 'redis3.example.com' }),
 ];
 
-await Promise.all(clients.map(client => client.connect()));
+await Promise.all(clients.map((client) => client.connect()));
 
 // Create distributed lock
 const redlock = new Redlock(clients);

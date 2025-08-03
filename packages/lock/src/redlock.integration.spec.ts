@@ -10,7 +10,6 @@ import {
 } from 'vitest';
 import { Redlock, RedlockInstance } from './redlock.js';
 
-
 // Helper function to parse REDIS_HOSTS environment variable
 function getRedisConfig(): Array<{ host: string; port: number }> {
   const redisHosts =
@@ -156,7 +155,13 @@ describe('Redlock Integration Tests', () => {
       // Try to extend with wrong token by creating a fake RedlockInstance
       const fakeToken = 'invalid-token';
       const fakeExpiresAt = new Date(Date.now() + TEST_TTL);
-      const fakeLock = new RedlockInstance(redlock, key, fakeToken, fakeExpiresAt, TEST_TTL);
+      const fakeLock = new RedlockInstance(
+        redlock,
+        key,
+        fakeToken,
+        fakeExpiresAt,
+        TEST_TTL,
+      );
 
       // This should fail because the token is invalid
       const extended = await fakeLock.extend();
@@ -374,7 +379,7 @@ describe('Redlock Integration Tests', () => {
       await expect(
         redlock.withLock(key, TEST_TTL, async () => {
           throw new Error(errorMessage);
-        })
+        }),
       ).rejects.toThrow(errorMessage);
 
       // Lock should be automatically released even on error
@@ -394,7 +399,7 @@ describe('Redlock Integration Tests', () => {
       const promises = delays.map(async (delay, index) => {
         try {
           const result = await redlock.withLock(key, TEST_TTL, async () => {
-            await new Promise(resolve => setTimeout(resolve, delay));
+            await new Promise((resolve) => setTimeout(resolve, delay));
             results.push(`client-${index}`);
             return `result-${index}`;
           });
@@ -407,15 +412,15 @@ describe('Redlock Integration Tests', () => {
       const outcomes = await Promise.all(promises);
 
       // Exactly one should succeed, others should fail with lock acquisition error
-      const successful = outcomes.filter(o => o.success);
-      const failed = outcomes.filter(o => !o.success);
+      const successful = outcomes.filter((o) => o.success);
+      const failed = outcomes.filter((o) => !o.success);
 
       expect(successful).toHaveLength(1);
       expect(failed).toHaveLength(delays.length - 1);
       expect(results).toHaveLength(1); // Only one function should execute
 
       // Failed attempts should be due to lock acquisition failure
-      failed.forEach(outcome => {
+      failed.forEach((outcome) => {
         expect(outcome.error).toContain('Failed to acquire lock');
       });
     });
@@ -429,7 +434,7 @@ describe('Redlock Integration Tests', () => {
 
       const result = await redlock.withLock(key, shortTtl, async () => {
         // Simulate long-running operation
-        await new Promise(resolve => setTimeout(resolve, longOperation));
+        await new Promise((resolve) => setTimeout(resolve, longOperation));
         return 'completed';
       });
 
@@ -460,7 +465,7 @@ describe('Redlock Integration Tests', () => {
       await expect(
         redlock.withLock(key, TEST_TTL, async () => {
           return 'should not execute';
-        })
+        }),
       ).rejects.toThrow('Failed to acquire lock');
 
       // Clean up
@@ -484,8 +489,8 @@ describe('Redlock Integration Tests', () => {
         const promise = currentRedlock.withLock(key, TEST_TTL, async () => {
           executionOrder.push(i);
           // Small delay to ensure order is maintained
-          await new Promise(resolve => setTimeout(resolve, 50));
-        })
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        });
 
         promises.push(promise);
       }
@@ -534,21 +539,21 @@ describe('Redlock Integration Tests', () => {
 
       // Test invalid key
       await expect(
-        redlock.withLock('', TEST_TTL, async () => 'test')
+        redlock.withLock('', TEST_TTL, async () => 'test'),
       ).rejects.toThrow();
 
       // Test invalid TTL
       await expect(
-        redlock.withLock(key, 0, async () => 'test')
+        redlock.withLock(key, 0, async () => 'test'),
       ).rejects.toThrow();
 
       await expect(
-        redlock.withLock(key, -1000, async () => 'test')
+        redlock.withLock(key, -1000, async () => 'test'),
       ).rejects.toThrow();
 
       // Test invalid function
       await expect(
-        redlock.withLock(key, TEST_TTL, null as any)
+        redlock.withLock(key, TEST_TTL, null as any),
       ).rejects.toThrow();
     });
 
@@ -570,7 +575,7 @@ describe('Redlock Integration Tests', () => {
       await expect(
         redlock.withLock(key, TEST_TTL, () => {
           return Promise.reject(new Error(errorMessage));
-        })
+        }),
       ).rejects.toThrow(errorMessage);
 
       // Verify lock is released after rejection
