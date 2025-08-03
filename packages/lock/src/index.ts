@@ -1,69 +1,43 @@
 /**
  * @fileoverview Redis-based distributed lock library for Node.js
  *
- * This library provides both single-instance and distributed (Redlock) implementations
- * of Redis-based locking. Choose the appropriate implementation based on your needs:
+ * Provides distributed locking using the Redlock algorithm with automatic lifecycle management.
  *
- * - **RedisLock**: Simple, fast locking for single Redis instance deployments
- * - **Redlock**: Distributed locking across multiple Redis instances with stronger safety guarantees
- *
- * @example Distributed locking with manual acquire/release
+ * @example Basic usage with automatic lock management
  * ```typescript
  * import { createClient } from 'redis';
  * import { Redlock } from '@redis-kit/lock';
  *
- * // Set up multiple Redis instances (or single instance)
- * const clients = [
- *   createClient({ host: 'redis1.example.com' }),
- *   createClient({ host: 'redis2.example.com' }),
- *   createClient({ host: 'redis3.example.com' })
- * ];
- *
+ * const clients = [createClient(), createClient(), createClient()];
  * await Promise.all(clients.map(client => client.connect()));
  *
  * const redlock = new Redlock(clients);
- * const lock = await redlock.acquire('my-resource', 30000);
  *
+ * // Automatic lock management - recommended approach
+ * const result = await redlock.withLock('my-resource', 30000, async () => {
+ *   // Your critical section code here
+ *   return 'work completed';
+ * });
+ * ```
+ *
+ * @example Manual lock management
+ * ```typescript
+ * const lock = await redlock.acquire('my-resource', 30000);
  * if (lock) {
  *   try {
- *     // Critical section
- *     console.log('Working with exclusive access');
- *
- *     // Optional: start auto-extension
- *     lock.startAutoExtension(5000); // extend 5 seconds before expiry
+ *     // Your critical section code here
  *   } finally {
  *     await lock.release();
  *   }
  * }
  * ```
  *
- * @example Distributed locking with withLock (Redlock)
+ * @example Multi-resource locking
  * ```typescript
- * import { createClient } from 'redis';
- * import { Redlock } from '@redis-kit/lock';
- *
- * // Set up multiple Redis instances
- * const clients = [
- *   createClient({ host: 'redis1.example.com' }),
- *   createClient({ host: 'redis2.example.com' }),
- *   createClient({ host: 'redis3.example.com' }),
- *   createClient({ host: 'redis4.example.com' }),
- *   createClient({ host: 'redis5.example.com' })
- * ];
- *
- * await Promise.all(clients.map(client => client.connect()));
- *
- * const redlock = new Redlock(clients);
- * const result = await redlock.withLock('my-resource', 30000, async () => {
- *   console.log('Distributed lock acquired with automatic management');
- *
- *   // Long-running operation - lock is automatically managed
- *   for (let i = 0; i < 100; i++) {
- *     await processItem(i);
- *   }
- *
- *   return 'processing completed';
- * }, { extensionThresholdMs: 5000 }); // Auto-extend 5 seconds before expiry
+ * // Lock multiple resources atomically
+ * await redlock.withLock(['user:123', 'order:456'], 30000, async () => {
+ *   // All resources are locked together
+ * });
  * ```
  *
  * @packageDocumentation

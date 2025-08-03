@@ -1,63 +1,91 @@
 /**
- * Lua script for atomically acquiring a lock.
+ * Lua script for atomically acquiring locks on multiple resources.
  *
- * Sets the lock only if it doesn't exist with the specified TTL.
+ * Checks if any of the keys already exist, and if not, sets all of them atomically.
+ * This ensures all-or-nothing acquisition across multiple resources.
  *
- * @param KEYS[1] - Lock key name
+ * @param KEYS[1..n] - Lock key names
  * @param ARGV[1] - Token value to store
  * @param ARGV[2] - TTL in milliseconds
  *
- * @returns 1 if lock was successfully acquired, 0 if lock already exists
+ * @returns Number of keys successfully acquired (should equal #KEYS for success)
  *
  * @public
  */
 export const ACQUIRE_SCRIPT = `
-if redis.call("SET", KEYS[1], ARGV[1], "NX", "PX", ARGV[2]) then
-    return 1
-else
-    return 0
+local token = ARGV[1]
+local ttlMs = ARGV[2]
+
+-- Check if any of the keys exist
+if redis.call("EXISTS", unpack(KEYS)) > 0 then
+  return 0
 end
+
+-- All keys are free, set them
+for i = 1, #KEYS do
+  redis.call("SET", KEYS[i], token, "PX", ttlMs)
+end
+
+return 1
 `.trim();
 
 /**
- * Lua script for atomically releasing a lock.
+ * Lua script for atomically releasing locks on multiple resources.
  *
- * Verifies token ownership before deleting the lock to prevent unauthorized releases.
- * Only the process with the correct token can release the lock.
+ * Verifies token ownership before deleting each lock to prevent unauthorized releases.
+ * Only removes locks that match the provided token.
  *
- * @param KEYS[1] - Lock key name
+ * @param KEYS[1..n] - Lock key names
  * @param ARGV[1] - Expected token value for ownership verification
  *
- * @returns 1 if lock was successfully released, 0 if token doesn't match or lock doesn't exist
+ * @returns Number of locks successfully released
  *
  * @public
  */
 export const RELEASE_SCRIPT = `
-if redis.call("GET", KEYS[1]) == ARGV[1] then
-    return redis.call("DEL", KEYS[1])
-else
-    return 0
+local token = ARGV[1]
+local count = 0
+
+for i = 1, #KEYS do
+  if redis.call("GET", KEYS[i]) == token then
+    redis.call("DEL", KEYS[i])
+    count = count + 1
+  end
 end
+
+return count
 `.trim();
 
 /**
- * Lua script for atomically extending a lock's TTL.
+ * Lua script for atomically extending TTL on multiple resources.
  *
- * Verifies token ownership before updating the expiration time.
- * Only the process with the correct token can extend the lock.
+ * Verifies token ownership before updating expiration time on each lock.
+ * Only extends locks that match the provided token.
  *
- * @param KEYS[1] - Lock key name
+ * @param KEYS[1..n] - Lock key names
  * @param ARGV[1] - Expected token value for ownership verification
  * @param ARGV[2] - New TTL in milliseconds
  *
- * @returns 1 if lock TTL was successfully updated, 0 if token doesn't match or lock doesn't exist
+ * @returns Number of locks successfully extended
  *
  * @public
  */
 export const EXTEND_SCRIPT = `
-if redis.call("GET", KEYS[1]) == ARGV[1] then
-    return redis.call("PEXPIRE", KEYS[1], ARGV[2])
-else
+-- Check if all keys have the expected token value
+local token = ARGV[1]
+local ttl = ARGV[2]
+local values = redis.call("MGET", unpack(KEYS))
+
+for _, currValue in ipairs(values) do
+  if currValue ~= token then
     return 0
+  end
 end
+
+-- All matched, update TTLs
+for _, key in ipairs(KEYS) do
+  redis.call("SET", key, token, "PX", ttl)
+end
+
+return 1
 `.trim();

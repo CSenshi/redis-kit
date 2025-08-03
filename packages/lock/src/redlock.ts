@@ -13,11 +13,71 @@ import type { RedlockOptions } from './types.js';
  * Internal interface for RedlockInstance to access private methods
  */
 interface RedlockInternalAccess {
-  release(key: string, token: string): Promise<boolean>;
-  extend(key: string, token: string, ttlMs: number): Promise<boolean>;
+  release(keys: string[], token: string): Promise<boolean>;
+  extend(keys: string[], token: string, ttlMs: number): Promise<boolean>;
 }
 
 const INTERNAL_ACCESS = Symbol.for('redlock-internal-access');
+
+/**
+ * Normalizes and processes resource keys for multi-resource locking
+ */
+function processResourceKeys(input: string | string[]): {
+  keys: string[];
+  displayName: string;
+} {
+  // Handle single string
+  if (typeof input === 'string') {
+    if (!input || input.trim() === '') {
+      throw new InvalidParameterError('key', input, 'non-empty string');
+    }
+    return {
+      keys: [input],
+      displayName: input,
+    };
+  }
+
+  // Handle array
+  if (!Array.isArray(input) || input.length === 0) {
+    throw new InvalidParameterError(
+      'keys',
+      input,
+      'non-empty array of strings',
+    );
+  }
+
+  // Validate and normalize keys
+  const validKeys: string[] = [];
+  for (let i = 0; i < input.length; i++) {
+    const key = input[i];
+    if (!key || typeof key !== 'string' || key.trim() === '') {
+      throw new InvalidParameterError(`keys[${i}]`, key, 'non-empty string');
+    }
+    validKeys.push(key);
+  }
+
+  // Remove duplicates and sort
+  const uniqueKeys = [...new Set(validKeys)].sort();
+
+  // Warn about duplicates
+  if (uniqueKeys.length < validKeys.length) {
+    const duplicates = validKeys.filter(
+      (key, index) => validKeys.indexOf(key) !== index,
+    );
+    console.warn('Duplicate keys detected and removed:', [
+      ...new Set(duplicates),
+    ]);
+  }
+
+  // Generate display name
+  const displayName =
+    uniqueKeys.length === 1 ? uniqueKeys[0] : `[${uniqueKeys.join(', ')}]`;
+
+  return {
+    keys: uniqueKeys,
+    displayName,
+  };
+}
 
 /**
  * Represents an individual distributed lock instance with self-managing lifecycle.
@@ -30,14 +90,21 @@ export class RedlockInstance {
   private extensionTimer?: NodeJS.Timeout;
   private autoExtensionEnabled = false;
   private autoExtensionThresholdMs = 1000;
+  private readonly keys: string[];
+  private readonly displayName: string;
 
   constructor(
     private readonly redlock: Redlock,
-    private readonly key: string,
+    keyOrKeys: string | string[],
     private readonly token: string,
     private expiresAt: Date,
     private readonly ttlMs: number,
   ) {
+    // Process resources
+    const processed = processResourceKeys(keyOrKeys);
+    this.keys = processed.keys;
+    this.displayName = processed.displayName;
+
     this.validateConstructorParams();
   }
 
@@ -70,10 +137,17 @@ export class RedlockInstance {
   }
 
   /**
+   * The resource keys this lock protects.
+   */
+  get resourceKeys(): string[] {
+    return [...this.keys];
+  }
+
+  /**
    * The resource key this lock protects.
    */
   get resourceKey(): string {
-    return this.key;
+    return this.displayName;
   }
 
   /**
@@ -91,10 +165,10 @@ export class RedlockInstance {
     this.stopAutoExtension();
 
     try {
-      return await this.redlock[INTERNAL_ACCESS].release(this.key, this.token);
+      return await this.redlock[INTERNAL_ACCESS].release(this.keys, this.token);
     } catch (error) {
       // Log error but don't throw - release should be best-effort
-      console.warn(`Failed to release lock ${this.key}:`, error);
+      console.warn(`Failed to release lock ${this.displayName}:`, error);
       return false;
     }
   }
@@ -119,7 +193,7 @@ export class RedlockInstance {
 
     try {
       const success = await this.redlock[INTERNAL_ACCESS].extend(
-        this.key,
+        this.keys,
         this.token,
         ttlToUse,
       );
@@ -132,7 +206,7 @@ export class RedlockInstance {
     } catch (error) {
       // Extension failures should be propagated as they indicate lock issues
       throw new Error(
-        `Failed to extend lock ${this.key}: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to extend lock ${this.displayName}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -210,7 +284,7 @@ export class RedlockInstance {
         // Extension failed - stop auto-extension
         this.autoExtensionEnabled = false;
         console.warn(
-          `Auto-extension failed for lock ${this.key} - stopping auto-extension`,
+          `Auto-extension failed for lock ${this.displayName} - stopping auto-extension`,
         );
       }
     } catch (error) {
@@ -219,14 +293,18 @@ export class RedlockInstance {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       console.warn(
-        `Auto-extension error for lock ${this.key}: ${errorMessage} - stopping auto-extension`,
+        `Auto-extension error for lock ${this.displayName}: ${errorMessage} - stopping auto-extension`,
       );
     }
   }
 
   private validateConstructorParams(): void {
-    if (!this.key || typeof this.key !== 'string') {
-      throw new InvalidParameterError('key', this.key, 'non-empty string');
+    if (!Array.isArray(this.keys) || this.keys.length === 0) {
+      throw new InvalidParameterError(
+        'keys',
+        this.keys,
+        'non-empty array of strings',
+      );
     }
     if (!this.token || typeof this.token !== 'string') {
       throw new InvalidParameterError('token', this.token, 'non-empty string');
@@ -325,18 +403,37 @@ export class Redlock {
    * @returns RedlockInstance if acquisition succeeds, null otherwise
    * @see http://redis.io/topics/distlock/
    */
-  async acquire(key: string, ttlMs: number): Promise<RedlockInstance | null> {
-    this.validateKey(key);
+  async acquire(key: string, ttlMs: number): Promise<RedlockInstance | null>;
+
+  /**
+   * Attempts to acquire distributed locks on multiple resources atomically.
+   *
+   * All resources must be acquired successfully or none will be acquired.
+   * Resources are processed in lexicographically sorted order to prevent deadlocks.
+   *
+   * @param keys Array of resource names to lock atomically
+   * @param ttlMs Lock time-to-live in milliseconds
+   * @returns RedlockInstance if acquisition succeeds, null otherwise
+   * @see http://redis.io/topics/distlock/
+   */
+  async acquire(keys: string[], ttlMs: number): Promise<RedlockInstance | null>;
+
+  async acquire(
+    keyOrKeys: string | string[],
+    ttlMs: number,
+  ): Promise<RedlockInstance | null> {
+    // Process resources
+    const processed = processResourceKeys(keyOrKeys);
     this.validateTtl(ttlMs);
 
     for (let attempt = 0; attempt <= this.maxRetryAttempts; attempt++) {
       const token = generateToken();
       const startTime = Date.now();
 
-      // Try to acquire lock on all instances
+      // Try to acquire lock on all instances using multiple keys
       const results = await Promise.allSettled(
         this.clients.map((client) =>
-          this.acquireOnInstance(client, key, token, ttlMs),
+          this.acquireOnInstance(client, processed.keys, token, ttlMs),
         ),
       );
 
@@ -354,13 +451,13 @@ export class Redlock {
 
       if (evaluation.success) {
         const expiresAt = new Date(Date.now() + evaluation.effectiveValidityMs);
-        return new RedlockInstance(this, key, token, expiresAt, ttlMs);
+        return new RedlockInstance(this, keyOrKeys, token, expiresAt, ttlMs);
       }
 
       // Failed - cleanup partial acquisitions
       await Promise.allSettled(
         this.clients.map((client) =>
-          this.releaseOnInstance(client, key, token),
+          this.releaseOnInstance(client, processed.keys, token),
         ),
       );
 
@@ -397,6 +494,39 @@ export class Redlock {
     key: string,
     ttlMs: number,
     fn: () => Promise<T>,
+    options?: { extensionThresholdMs?: number },
+  ): Promise<T>;
+
+  /**
+   * Executes a function within a multi-resource lock context with automatic lifecycle management.
+   *
+   * Provides automatic lock acquisition, extension, and release for multiple resources atomically.
+   * All resources must be acquired successfully or the operation fails.
+   *
+   * @param keys Array of resource names to lock atomically
+   * @param ttlMs Lock time-to-live in milliseconds
+   * @param fn Function to execute within the lock context
+   * @param options Optional configuration for auto-extension behavior
+   * @returns Promise resolving to the function's return value
+   *
+   * @example
+   * ```typescript
+   * const result = await redlock.withLock(['user:123', 'order:456'], 30000, async () => {
+   *   return performWork();
+   * });
+   * ```
+   */
+  async withLock<T>(
+    keys: string[],
+    ttlMs: number,
+    fn: () => Promise<T>,
+    options?: { extensionThresholdMs?: number },
+  ): Promise<T>;
+
+  async withLock<T>(
+    keyOrKeys: string | string[],
+    ttlMs: number,
+    fn: () => Promise<T>,
     options: { extensionThresholdMs?: number } = {},
   ): Promise<T> {
     if (typeof fn !== 'function') {
@@ -404,9 +534,12 @@ export class Redlock {
     }
 
     // Acquire lock
-    const lock = await this.acquire(key, ttlMs);
+    // @ts-expect-error acquire accepts both string and string[] types
+    const lock = await this.acquire(keyOrKeys, ttlMs);
     if (!lock) {
-      throw new Error(`Failed to acquire lock for resource: ${key}`);
+      const displayName =
+        typeof keyOrKeys === 'string' ? keyOrKeys : `[${keyOrKeys.join(', ')}]`;
+      throw new Error(`Failed to acquire lock for resource: ${displayName}`);
     }
 
     // Start auto-extension if threshold is provided
@@ -426,12 +559,11 @@ export class Redlock {
   /**
    * Internal method for releasing locks. Only accessible by RedlockInstance.
    */
-  private async release(key: string, token: string): Promise<boolean> {
-    this.validateKey(key);
+  private async release(keys: string[], token: string): Promise<boolean> {
     this.validateToken(token);
 
     const results = await Promise.allSettled(
-      this.clients.map((client) => this.releaseOnInstance(client, key, token)),
+      this.clients.map((client) => this.releaseOnInstance(client, keys, token)),
     );
 
     const successCount = results.filter(
@@ -445,17 +577,16 @@ export class Redlock {
    * Internal method for extending locks. Only accessible by RedlockInstance.
    */
   private async extend(
-    key: string,
+    keys: string[],
     token: string,
     ttlMs: number,
   ): Promise<boolean> {
-    this.validateKey(key);
     this.validateToken(token);
     this.validateTtl(ttlMs);
 
     const results = await Promise.allSettled(
       this.clients.map((client) =>
-        this.extendOnInstance(client, key, token, ttlMs),
+        this.extendOnInstance(client, keys, token, ttlMs),
       ),
     );
 
@@ -468,15 +599,15 @@ export class Redlock {
 
   private async acquireOnInstance(
     client: RedisClientType,
-    key: string,
+    keys: string[],
     token: string,
     ttlMs: number,
   ): Promise<boolean> {
     try {
       const result = (await client.eval(ACQUIRE_SCRIPT, {
-        keys: [key],
+        keys: keys,
         arguments: [token, ttlMs.toString()],
-      })) as number;
+      })) as 0 | 1;
 
       return result === 1;
     } catch {
@@ -486,16 +617,16 @@ export class Redlock {
 
   private async releaseOnInstance(
     client: RedisClientType,
-    key: string,
+    keys: string[],
     token: string,
   ): Promise<boolean> {
     try {
       const result = (await client.eval(RELEASE_SCRIPT, {
-        keys: [key],
+        keys: keys,
         arguments: [token],
       })) as number;
 
-      return result === 1;
+      return result > 0;
     } catch {
       return false;
     }
@@ -503,15 +634,15 @@ export class Redlock {
 
   private async extendOnInstance(
     client: RedisClientType,
-    key: string,
+    keys: string[],
     token: string,
     ttlMs: number,
   ): Promise<boolean> {
     try {
       const result = (await client.eval(EXTEND_SCRIPT, {
-        keys: [key],
+        keys: keys,
         arguments: [token, ttlMs.toString()],
-      })) as number;
+      })) as 0 | 1;
 
       return result === 1;
     } catch {
