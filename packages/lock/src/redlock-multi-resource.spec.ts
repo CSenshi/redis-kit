@@ -40,14 +40,12 @@ describe('Redlock Multi-Resource Support', () => {
 
       expect(lock).toBeInstanceOf(RedlockInstance);
       expect(lock?.resourceKeys).toEqual(['order:456', 'user:123']); // sorted
-      expect(lock?.resourceKey).toBe('[order:456, user:123]');
     });
 
     it('should sort resources lexicographically', async () => {
       const lock = await redlock.acquire(['zebra', 'alpha', 'beta'], 5000);
 
       expect(lock?.resourceKeys).toEqual(['alpha', 'beta', 'zebra']);
-      expect(lock?.resourceKey).toBe('[alpha, beta, zebra]');
     });
 
     it('should deduplicate resources', async () => {
@@ -73,7 +71,6 @@ describe('Redlock Multi-Resource Support', () => {
       const lock = await redlock.acquire(['user:123'], 5000);
 
       expect(lock?.resourceKeys).toEqual(['user:123']);
-      expect(lock?.resourceKey).toBe('user:123');
     });
 
     it('should throw error for empty array', async () => {
@@ -193,7 +190,6 @@ describe('Redlock Multi-Resource Support', () => {
 
       expect(lock).toBeInstanceOf(RedlockInstance);
       expect(lock?.resourceKeys).toEqual(['user:123']);
-      expect(lock?.resourceKey).toBe('user:123');
     });
 
     it('should work with single string in withLock', async () => {
@@ -230,7 +226,6 @@ describe('Redlock Multi-Resource Support', () => {
 
     it('should provide access to all resource keys', () => {
       expect(lock.resourceKeys).toEqual(['order:456', 'user:123']);
-      expect(lock.resourceKey).toBe('[order:456, user:123]');
     });
 
     it('should release all resources', async () => {

@@ -77,7 +77,6 @@ Executes a function within a lock context with automatic management.
 #### Properties
 
 - `isValid: boolean` - Whether the lock is currently valid
-- `resourceKey: string` - The resource key this lock protects
 
 #### Methods
 

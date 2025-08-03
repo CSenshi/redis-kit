@@ -22,19 +22,13 @@ const INTERNAL_ACCESS = Symbol.for('redlock-internal-access');
 /**
  * Normalizes and processes resource keys for multi-resource locking
  */
-function processResourceKeys(input: string | string[]): {
-  keys: string[];
-  displayName: string;
-} {
+function processResourceKeys(input: string | string[]): string[] {
   // Handle single string
   if (typeof input === 'string') {
     if (!input || input.trim() === '') {
       throw new InvalidParameterError('key', input, 'non-empty string');
     }
-    return {
-      keys: [input],
-      displayName: input,
-    };
+    return [input];
   }
 
   // Handle array
@@ -69,14 +63,7 @@ function processResourceKeys(input: string | string[]): {
     ]);
   }
 
-  // Generate display name
-  const displayName =
-    uniqueKeys.length === 1 ? uniqueKeys[0] : `[${uniqueKeys.join(', ')}]`;
-
-  return {
-    keys: uniqueKeys,
-    displayName,
-  };
+  return uniqueKeys;
 }
 
 /**
@@ -91,7 +78,6 @@ export class RedlockInstance {
   private autoExtensionEnabled = false;
   private autoExtensionThresholdMs = 1000;
   private readonly keys: string[];
-  private readonly displayName: string;
 
   constructor(
     private readonly redlock: Redlock,
@@ -101,11 +87,7 @@ export class RedlockInstance {
     private readonly ttlMs: number,
   ) {
     // Process resources
-    const processed = processResourceKeys(keyOrKeys);
-    this.keys = processed.keys;
-    this.displayName = processed.displayName;
-
-    this.validateConstructorParams();
+    this.keys = processResourceKeys(keyOrKeys);
   }
 
   /**
@@ -144,10 +126,10 @@ export class RedlockInstance {
   }
 
   /**
-   * The resource key this lock protects.
+   * Generates a display name for the locked resources.
    */
-  get resourceKey(): string {
-    return this.displayName;
+  private getDisplayName(): string {
+    return this.keys.length === 1 ? this.keys[0] : `[${this.keys.join(', ')}]`;
   }
 
   /**
@@ -168,7 +150,7 @@ export class RedlockInstance {
       return await this.redlock[INTERNAL_ACCESS].release(this.keys, this.token);
     } catch (error) {
       // Log error but don't throw - release should be best-effort
-      console.warn(`Failed to release lock ${this.displayName}:`, error);
+      console.warn(`Failed to release lock ${this.getDisplayName()}:`, error);
       return false;
     }
   }
@@ -206,7 +188,7 @@ export class RedlockInstance {
     } catch (error) {
       // Extension failures should be propagated as they indicate lock issues
       throw new Error(
-        `Failed to extend lock ${this.displayName}: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to extend lock ${this.getDisplayName()}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -284,7 +266,7 @@ export class RedlockInstance {
         // Extension failed - stop auto-extension
         this.autoExtensionEnabled = false;
         console.warn(
-          `Auto-extension failed for lock ${this.displayName} - stopping auto-extension`,
+          `Auto-extension failed for lock ${this.getDisplayName()} - stopping auto-extension`,
         );
       }
     } catch (error) {
@@ -293,35 +275,8 @@ export class RedlockInstance {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       console.warn(
-        `Auto-extension error for lock ${this.displayName}: ${errorMessage} - stopping auto-extension`,
+        `Auto-extension error for lock ${this.getDisplayName()}: ${errorMessage} - stopping auto-extension`,
       );
-    }
-  }
-
-  private validateConstructorParams(): void {
-    if (!Array.isArray(this.keys) || this.keys.length === 0) {
-      throw new InvalidParameterError(
-        'keys',
-        this.keys,
-        'non-empty array of strings',
-      );
-    }
-    if (!this.token || typeof this.token !== 'string') {
-      throw new InvalidParameterError('token', this.token, 'non-empty string');
-    }
-    if (
-      !this.expiresAt ||
-      !(this.expiresAt instanceof Date) ||
-      isNaN(this.expiresAt.getTime())
-    ) {
-      throw new InvalidParameterError(
-        'expiresAt',
-        this.expiresAt,
-        'valid Date object',
-      );
-    }
-    if (!Number.isInteger(this.ttlMs) || this.ttlMs <= 0) {
-      throw new InvalidParameterError('ttlMs', this.ttlMs, 'positive integer');
     }
   }
 }
@@ -423,7 +378,7 @@ export class Redlock {
     ttlMs: number,
   ): Promise<RedlockInstance | null> {
     // Process resources
-    const processed = processResourceKeys(keyOrKeys);
+    const keys = processResourceKeys(keyOrKeys);
     this.validateTtl(ttlMs);
 
     for (let attempt = 0; attempt <= this.maxRetryAttempts; attempt++) {
@@ -433,7 +388,7 @@ export class Redlock {
       // Try to acquire lock on all instances using multiple keys
       const results = await Promise.allSettled(
         this.clients.map((client) =>
-          this.acquireOnInstance(client, processed.keys, token, ttlMs),
+          this.acquireOnInstance(client, keys, token, ttlMs),
         ),
       );
 
@@ -457,7 +412,7 @@ export class Redlock {
       // Failed - cleanup partial acquisitions
       await Promise.allSettled(
         this.clients.map((client) =>
-          this.releaseOnInstance(client, processed.keys, token),
+          this.releaseOnInstance(client, keys, token),
         ),
       );
 
@@ -747,12 +702,6 @@ export class Redlock {
       attempt.elapsedTime,
     );
     return { success: true, effectiveValidityMs };
-  }
-
-  private validateKey(key: string): void {
-    if (!key || typeof key !== 'string' || key.trim() === '') {
-      throw new InvalidParameterError('key', key, 'non-empty string');
-    }
   }
 
   private validateToken(token: string): void {

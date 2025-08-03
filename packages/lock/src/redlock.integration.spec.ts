@@ -89,7 +89,6 @@ describe('Redlock Integration Tests', () => {
 
       expect(lock).not.toBeNull();
       if (lock) {
-        expect(lock.resourceKey).toBe(key);
         expect(lock.expirationTime).toBeInstanceOf(Date);
         expect(lock.isValid).toBe(true);
         expect(lock.isReleased).toBe(false);
