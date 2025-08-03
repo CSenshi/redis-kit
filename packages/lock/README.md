@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/CSenshi/redis-kit/main/docs/images/logo.png" alt="Redis Kit Logo" width="120" height="120">
+<img src="https://raw.githubusercontent.com/CSenshi/redis-kit/main/docs/images/logo.png" alt="Redis Kit Logo" height="200">
 
 # @redis-kit/lock
 
