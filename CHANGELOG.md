@@ -1,3 +1,13 @@
+## 0.1.0-2 (2025-08-05)
+
+### 🩹 Fixes
+
+- **package:** remove "type" field from package.json ([2bab834](https://github.com/CSenshi/redis-kit/commit/2bab834))
+
+### ❤️ Thank You
+
+- CSenshi
+
 ## 0.1.0-1 (2025-08-03)
 
 ### 🩹 Fixes
