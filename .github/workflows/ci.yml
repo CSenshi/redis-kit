@@ -13,6 +13,24 @@ permissions:
 jobs:
   main:
     runs-on: ubuntu-latest
+
+    services:
+      redis1:
+        image: redis:8-alpine
+        ports: ['6379:6379']
+      redis2:
+        image: redis:8-alpine
+        ports: ['6380:6379']
+      redis3:
+        image: redis:8-alpine
+        ports: ['6381:6379']
+      redis4:
+        image: redis:8-alpine
+        ports: ['6382:6379']
+      redis5:
+        image: redis:8-alpine
+        ports: ['6383:6379']
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,14 +51,18 @@ jobs:
       # Cache node_modules
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'pnpm'
 
       - run: pnpm install --frozen-lockfile
 
       # Prepend any command with "nx-cloud record --" to record its logs to Nx Cloud
       # - run: pnpm exec nx-cloud record -- echo Hello World
-      - run: pnpm exec nx run-many -t lint test build
+      - run: pnpm exec nx run-many -t lint test build typecheck
+        env:
+          REDIS_HOSTS: localhost,localhost,localhost,localhost,localhost
+          REDIS_PORTS: 6379,6380,6381,6382,6383
+
       # Nx Cloud recommends fixes for failures to help you get CI green faster. Learn more: https://nx.dev/ci/features/self-healing-ci
       - run: pnpm exec nx fix-ci
         if: always()

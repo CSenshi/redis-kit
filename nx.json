@@ -33,7 +33,8 @@
       "options": {
         "buildTargetName": "build",
         "buildDepsTargetName": "build-deps",
-        "watchDepsTargetName": "watch-deps"
+        "watchDepsTargetName": "watch-deps",
+        "useLegacyTypescriptPlugin": false
       }
     },
     {
@@ -60,6 +61,11 @@
   "release": {
     "version": {
       "preVersionCommand": "pnpm dlx nx run-many -t build"
+    },
+    "changelog": {
+      "workspaceChangelog": {
+        "createRelease": "github"
+      }
     }
   },
   "targetDefaults": {

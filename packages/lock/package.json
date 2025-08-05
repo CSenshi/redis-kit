@@ -1,7 +1,20 @@
 {
   "name": "@redis-kit/lock",
-  "version": "0.0.1",
-  "type": "module",
+  "version": "0.1.0-2",
+  "license": "MIT",
+  "author": "Saba Pochkhua <saba.pochkhua@gmail.com> (https://github.com/CSenshi)",
+  "description": "Production-ready distributed locking library for Redis with Redlock algorithm implementation",
+  "keywords": [
+    "redis",
+    "lock",
+    "distributed-lock",
+    "redlock",
+    "concurrency",
+    "typescript",
+    "redis-lock",
+    "mutex"
+  ],
+  "homepage": "https://github.com/CSenshi/redis-kit/tree/main/packages/lock",
   "main": "./dist/index.esm.js",
   "module": "./dist/index.esm.js",
   "types": "./dist/index.esm.d.ts",
@@ -18,5 +31,19 @@
     "dist",
     "!**/*.tsbuildinfo"
   ],
-  "dependencies": {}
+  "devDependencies": {
+    "redis": "^5.0.0"
+  },
+  "peerDependencies": {
+    "redis": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CSenshi/redis-kit",
+    "directory": "packages/lock"
+  }
 }
