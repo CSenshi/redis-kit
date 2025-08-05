@@ -1,3 +1,13 @@
+## 0.1.0-3 (2025-08-05)
+
+### 🩹 Fixes
+
+- **lock:** add ts-expect-error comment to suppress TypeScript error ([ff48902](https://github.com/CSenshi/redis-kit/commit/ff48902))
+
+### ❤️ Thank You
+
+- CSenshi
+
 ## 0.1.0-2 (2025-08-05)
 
 ### 🩹 Fixes
